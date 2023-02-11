@@ -23,7 +23,6 @@ def view_gt_bbox(annotation_file='annotations.json', image_dir='PNGImages', targ
         id_to_ann[ann['image_id']].append(i)
 
     # draw bbox
-    w_min, w_max, h_min, h_max = 100000, 0, 100000, 0
     for file_path in os.listdir( os.path.join(root, image_dir)):
         print(file_path)
         image_path = os.path.join(root, image_dir, file_path)
@@ -46,6 +45,7 @@ def view_gt_bbox(annotation_file='annotations.json', image_dir='PNGImages', targ
 
 
 def downsize(image_dir='PNGImages', target_dir='downsized'):
+    resized_h, resized_w = 1154, 1075
     root = "/home/ec2-user/data/MIMIC_ETT_annotations"
     # load target.json
     f = open(os.path.join(root, 'annotations.json'))
@@ -57,18 +57,22 @@ def downsize(image_dir='PNGImages', target_dir='downsized'):
         image_path = os.path.join(root, image_dir, file_path)
         image = Image.open(image_path).convert("RGB")
         h, w = image.size
-        # image = image.resize((h//2, w//2), Image.ANTIALIAS)
-        image = image.resize((1154, 1075), Image.ANTIALIAS)
+        image = image.resize((resized_h, resized_w))
         image.save(os.path.join(root, "downsized", file_path))
 
     # downsize gt bbox
     for i, ann in enumerate(data['annotations']):
         if ann['image_id'] == 2946144: # corrupted image
             continue
-        ann['bbox'][0] = ann['bbox'][0] // 2
-        ann['bbox'][1] = ann['bbox'][1] // 2
-        ann['bbox'][2] = ann['bbox'][2] // 2
-        ann['bbox'][3] = ann['bbox'][3] // 2
+        for i in range(len(data['images'])):
+            if data['images'][i]['id'] == ann['image_id']:
+                w = data['images'][i]['height']
+                h = data['images'][i]['width']
+                break
+        ann['bbox'][0] = ann['bbox'][0] * resized_h / h
+        ann['bbox'][1] = ann['bbox'][1] * resized_w / w
+        ann['bbox'][2] = ann['bbox'][2] * resized_h / h
+        ann['bbox'][3] = ann['bbox'][3] * resized_w / w
     
     # save target.json
     with open(os.path.join(root, 'annotations_downsized.json'), 'w') as outfile:
@@ -76,5 +80,5 @@ def downsize(image_dir='PNGImages', target_dir='downsized'):
 
 
 if __name__ == "__main__":
-    # view_gt_bbox(annotation_file='annotations_downsized.json', image_dir='downsized', target_dir='bbox3046_downsized')
-    downsize()
+    # downsize()
+    view_gt_bbox(annotation_file='annotations_downsized.json', image_dir='downsized', target_dir='bbox3046_downsized')
