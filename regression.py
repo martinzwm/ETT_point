@@ -64,6 +64,8 @@ def get_model():
 
 def train(model, dataset_train, dataset_val, optimizer, device, epoch):
     model.train()
+    best_loss = float('inf')
+
     for i in range(epoch):
         print("Training epoch: ", i+1, " / ", epoch, " ...")
         
@@ -87,9 +89,18 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch):
 
         # Progress report
         print("Training set", end=" ")
-        test(model, dataset_train, device)
+        train_loss = test(model, dataset_train, device)
         print("Validation set", end=" ")
-        test(model, dataset_val, device)
+        val_loss = test(model, dataset_val, device)
+
+        # Save best model so far
+        if val_loss < best_loss:
+            best_loss = val_loss
+            torch.save(
+                model.state_dict(), 
+                "ckpts/model_epoch={}_lr={}.pt".format(i+1, optimizer.param_groups[0]['lr'])
+                )
+        
 
 
 def test(model, dataset_test, device):
@@ -114,14 +125,18 @@ def test(model, dataset_test, device):
             loss = torch.sqrt(loss)
             dist.append(loss.item())
     
-    print("Average L2 loss: ", sum(dist) / len(dist))
+    avg_loss = sum(dist) / len(dist)
+    print("Average L2 loss: ", avg_loss)
+    return avg_loss
 
 
-def pipeline():
+def pipeline(ckpt=None):
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
     model = get_model()
+    if ckpt != None:
+        model.load_state_dict(torch.load(ckpt))
     model.to(device)
 
     params = [p for p in model.parameters() if p.requires_grad]
@@ -130,6 +145,7 @@ def pipeline():
 
     print("Testing on test set ...")
     test(model, dataloader_test, device)
+
 
 
 if __name__ == "__main__":    
