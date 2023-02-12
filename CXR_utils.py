@@ -38,10 +38,15 @@ def view_gt_bbox(annotation_file='annotations.json', image_dir='PNGImages', targ
                 ymax = ymin + h
                 bbox = [xmin, ymin, xmax, ymax]
 
-        labelled_img = ImageDraw.Draw(image)
-        shapes = [bbox]
-        labelled_img.rectangle(shapes[0], outline ="red", width = 10)
+        image = draw_single_bbox(image, bbox)
         image.save(os.path.join(root, target_dir, file_path))
+
+
+def draw_single_bbox(image, bbox):
+    labelled_img = ImageDraw.Draw(image)
+    shapes = [bbox]
+    labelled_img.rectangle(shapes[0], outline="red", width = 10)
+    return image
 
 
 def downsize(image_dir='PNGImages', target_dir='downsized'):

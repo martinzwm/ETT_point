@@ -5,8 +5,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import utils
 import transforms as T
+from PIL import Image, ImageDraw, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+import wandb
 
 from dataset import *
+from CXR_utils import draw_single_bbox
 
 
 # Data augementation
@@ -62,9 +66,13 @@ def get_model():
     return model
 
 
-def train(model, dataset_train, dataset_val, optimizer, device, epoch):
+def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=False):
     model.train()
     best_loss = float('inf')
+
+    if logging:
+        wandb.init(project='ETT_point')
+        wandb.config = {}
 
     for i in range(epoch):
         print("Training epoch: ", i+1, " / ", epoch, " ...")
@@ -101,7 +109,17 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch):
                 "ckpts/model_epoch={}_lr={}.pt".format(i+1, optimizer.param_groups[0]['lr'])
                 )
         
-
+        # Log to wandb
+        if logging:
+            dst = log_images(model, dataset_val, device)
+            wandb.log({
+                "train/loss": train_loss, 
+                "val/loss": val_loss,
+                "images": wandb.Image(dst)
+                })
+    
+    wandb.finish()
+        
 
 def test(model, dataset_test, device):
     model.eval()
@@ -130,7 +148,44 @@ def test(model, dataset_test, device):
     return avg_loss
 
 
-def pipeline(ckpt=None):
+def log_images(model, dataset, device):
+    # Randomly select 3 images from the validation set, and plot the predicted center
+    # and the ground truth center.
+    indices = np.random.choice(len(dataset), size=3, replace=False)
+    images = []
+    
+    for i in indices:
+        image, target = dataset.dataset[i]
+        image.unsqueeze_(0)
+        image = image.to(device)
+        predicted = model(image)
+        predicted = predicted.cpu().detach().numpy()[0]
+
+        gt_box = target['boxes'].squeeze(0).cpu().detach().numpy()
+        gt = [(gt_box[0] + gt_box[2]) / 2, (gt_box[1] + gt_box[3]) / 2]
+
+        # Plot the image using PIL
+        image = image.cpu().detach().numpy()[0]
+        image = np.moveaxis(image, 0, -1)
+        image = (image * 255).astype(np.uint8)
+        image = Image.fromarray(image)
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((predicted[0]-10, predicted[1]-10, predicted[0]+10, predicted[1]+10), fill='green')
+        draw.ellipse((gt[0]-10, gt[1]-10, gt[0]+10, gt[1]+10), fill='red')
+        images.append(image)
+    
+    # Concatenate the images
+    dst = Image.new(
+        'RGB', 
+        (images[0].width + images[1].width + images[2].width + 200, images[0].height)
+        )
+    dst.paste(images[0], (0, 0))
+    dst.paste(images[1], (images[0].width + 100, 0))
+    dst.paste(images[2], (images[0].width + + images[0].width + 200, 0))
+    return dst
+        
+
+def pipeline(ckpt=None, logging=False):
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
@@ -141,12 +196,12 @@ def pipeline(ckpt=None):
 
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.SGD(params, lr=0.005, momentum=0.9, weight_decay=0.0005)
-    train(model, dataloader_train, dataloader_val, optimizer, device, 2)
+    train(model, dataloader_train, dataloader_val, optimizer, device, 2, logging)
 
     print("Testing on test set ...")
     test(model, dataloader_test, device)
 
 
 
-if __name__ == "__main__":    
-    pipeline()
+if __name__ == "__main__":   
+    pipeline(logging=True)
