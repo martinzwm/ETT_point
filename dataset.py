@@ -1,10 +1,21 @@
 import os
-import numpy as np
 import torch
 import torch.utils.data
-from PIL import Image, ImageFile
+from PIL import Image, ImageFile, ImageDraw
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 import json
+import transforms as T
+# import torchvision.transforms as TT
+
+
+# Data augementation
+def get_transform(train):
+    transforms = []
+    transforms.append(T.ToTensor()) # converts a PIL image to a PyTorch Tensor
+    if train:
+        transforms.append(T.RandomHorizontalFlip(0.5))
+    return T.Compose(transforms)
+
 
 class CXRDataset(torch.utils.data.Dataset):
     def __init__(
@@ -99,5 +110,6 @@ if __name__ == "__main__":
             root='/home/ec2-user/data/MIMIC_ETT_annotations', 
             image_dir='downsized',
             ann_file='annotations_downsized.json',
+            transforms=get_transform(train=True),
             )
     print(dataset[0])

@@ -1,28 +1,15 @@
 from __future__ import print_function
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import utils
-import transforms as T
 from PIL import Image, ImageDraw, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 import wandb
 
 from dataset import *
-from CXR_utils import draw_single_bbox
-
-
-# Data augementation
-def get_transform(train):
-    transforms = []
-    # converts the image, a PIL image, into a PyTorch Tensor
-    transforms.append(T.ToTensor())
-    if train:
-        # during training, randomly flip the training images
-        # and ground-truth for data augmentation
-        transforms.append(T.RandomHorizontalFlip(0.5))
-    return T.Compose(transforms)
 
 
 def get_dataloader():
@@ -30,13 +17,13 @@ def get_dataloader():
         root='/home/ec2-user/data/MIMIC_ETT_annotations', 
         image_dir='downsized',
         ann_file='annotations_downsized.json',
-        transforms=get_transform(train=True)
+        transforms=get_transform(train=False)
         )
-
     val_size, test_size = len(dataset) // 3, len(dataset) // 3
     dataset_train, dataset_val, dataset_test = torch.utils.data.random_split(
         dataset, [len(dataset)-val_size-test_size, val_size, test_size]
         )
+    dataset_train.dataset.transforms = get_transform(train=True)
 
     # define training and validation data loaders
     dataloader_train = torch.utils.data.DataLoader(
