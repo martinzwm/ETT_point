@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import argparse
 import numpy as np
 import torch
 import torch.nn as nn
@@ -27,13 +28,13 @@ def get_dataloader():
 
     # define training and validation data loaders
     dataloader_train = torch.utils.data.DataLoader(
-        dataset_train, batch_size=2, shuffle=True, num_workers=4,
+        dataset_train, batch_size=arg.batch_size, shuffle=True, num_workers=4,
         collate_fn=utils.collate_fn)
     dataloader_val = torch.utils.data.DataLoader(
-        dataset_val, batch_size=2, shuffle=False, num_workers=4,
+        dataset_val, batch_size=arg.batch_size, shuffle=False, num_workers=4,
         collate_fn=utils.collate_fn)
     dataloader_test = torch.utils.data.DataLoader(
-        dataset_test, batch_size=2, shuffle=False, num_workers=4,
+        dataset_test, batch_size=arg.batch_size, shuffle=False, num_workers=4,
         collate_fn=utils.collate_fn)
 
     return dataloader_train, dataloader_val, dataloader_test
@@ -158,7 +159,7 @@ def log_images(model, dataset, device):
         draw = ImageDraw.Draw(image)
         draw.ellipse((predicted[0]-10, predicted[1]-10, predicted[0]+10, predicted[1]+10), fill='green')
         draw.ellipse((gt[0]-10, gt[1]-10, gt[0]+10, gt[1]+10), fill='red')
-        print(predicted, gt)
+        print(gt, predicted)
         images.append(image)
     
     # Concatenate the images
@@ -182,8 +183,9 @@ def pipeline(ckpt=None, logging=False):
     model.to(device)
 
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.SGD(params, lr=0.005, momentum=0.9, weight_decay=0.0005)
-    train(model, dataloader_train, dataloader_val, optimizer, device, 20, logging)
+    optimizer = torch.optim.SGD(params, lr=arg.lr, momentum=0.9, weight_decay=0.0005)
+    logging = True if arg.logging == 1 else False
+    train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging)
 
     print("Testing on test set ...")
     test(model, dataloader_test, device)
@@ -191,4 +193,11 @@ def pipeline(ckpt=None, logging=False):
 
 
 if __name__ == "__main__":   
-    pipeline(logging=True)
+    parser = argparse.ArgumentParser(description='Regression model')
+    parser.add_argument('--logging', type=int, default=1, help='Enable logging to wandb')
+    parser.add_argument('--lr', type=float, default=0.005, help='Learning rate')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
+    parser.add_argument('--epoch', type=int, default=20, help='Number of epochs')
+
+    arg = parser.parse_args()
+    pipeline()
