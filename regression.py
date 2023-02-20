@@ -154,6 +154,10 @@ def log_images(model, dataset, device):
         # Plot the image using PIL
         image = image.cpu().detach().numpy()[0]
         image = np.moveaxis(image, 0, -1)
+        # unnormalize
+        mean = np.array([0.49271007, 0.49271007, 0.49271007])
+        std = np.array([0.23071574, 0.23071574, 0.23071574])
+        image = std * image + mean
         image = (image * 255).astype(np.uint8)
         image = Image.fromarray(image)
         draw = ImageDraw.Draw(image)
