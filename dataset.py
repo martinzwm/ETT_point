@@ -5,13 +5,16 @@ from PIL import Image, ImageFile, ImageDraw
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 import json
 import transforms as T
-# import torchvision.transforms as TT
 
 
 # Data augementation
 def get_transform(train):
     transforms = []
     transforms.append(T.ToTensor()) # converts a PIL image to a PyTorch Tensor
+    transforms.append(T.Normalize(
+        [0.49271007, 0.49271007, 0.49271007], 
+        [0.23071574, 0.23071574, 0.23071574]
+        )) # normalize
     if train:
         transforms.append(T.RandomHorizontalFlip(0.5))
     return T.Compose(transforms)
@@ -70,7 +73,7 @@ class CXRDataset(torch.utils.data.Dataset):
             ann = self.json['annotations'][ann_ids[i]]
             # label
             lab = ann['category_id']
-            if lab != 3046: # only consider ETT for now, TODO: update to include carina as well
+            if lab != 3046: # only consider carina for now, TODO: update to include ETT as well
                 continue
             labels.append(1)
             # bbox

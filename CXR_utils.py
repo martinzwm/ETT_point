@@ -1,5 +1,6 @@
 import json
 import os
+import numpy as np
 from PIL import Image, ImageDraw, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -84,6 +85,24 @@ def downsize(image_dir='PNGImages', target_dir='downsized'):
         json.dump(data, outfile)
 
 
+def get_stats(image_dir='PNGImages'):
+    root = "/home/ec2-user/data/MIMIC_ETT_annotations"
+    # find mean and std of images in folder
+    mean = [0, 0, 0]
+    std = [0, 0, 0]
+    for file_path in os.listdir( os.path.join(root, image_dir)):
+        image_path = os.path.join(root, image_dir, file_path)
+        image = Image.open(image_path).convert("RGB")
+        image = np.array(image)
+        image = image / 255
+        mean += image.mean(axis=(0, 1))
+        std += image.std(axis=(0, 1))
+    mean /= len(os.listdir( os.path.join(root, image_dir)))
+    std /= len(os.listdir( os.path.join(root, image_dir)))
+    print("Mean of the dataset: ", mean)
+    print("Std of the dataset: ", std)
+    
+
 if __name__ == "__main__":
-    # downsize()
-    view_gt_bbox(annotation_file='annotations_downsized.json', image_dir='downsized', target_dir='bbox3046_downsized')
+    # view_gt_bbox(annotation_file='annotations_downsized.json', image_dir='downsized', target_dir='bbox3046_downsized')
+    get_stats("downsized")
