@@ -42,13 +42,26 @@ def get_dataloader():
 
 def get_model():
     model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
-    
+    # Freeze backbone layers
+    for param in model.parameters():
+        param.requires_grad = False
+
     model = nn.Sequential(
         *[module for _, module in model.backbone.items()],
-        nn.Conv2d(2048, 1, kernel_size=(100, 100), stride=(1, 1)),
+        nn.Conv2d(2048, 512, kernel_size=(3, 3), stride=(2, 2)),
         nn.ReLU(),
+        nn.BatchNorm2d(512),
+        nn.Conv2d(512, 128, kernel_size=(3, 3), stride=(2, 2)),
+        nn.ReLU(),
+        nn.BatchNorm2d(128),
+        nn.Conv2d(128, 32, kernel_size=(3, 3), stride=(2, 2)),
+        nn.ReLU(),
+        nn.BatchNorm2d(32),
+        nn.Conv2d(32, 8, kernel_size=(3, 3), stride=(2, 2)),
+        nn.ReLU(),
+        nn.BatchNorm2d(8),
         nn.Flatten(),
-        nn.Linear(36 * 46, 2)
+        nn.Linear(448, 2),
     )
     return model
 
@@ -187,7 +200,7 @@ def pipeline(ckpt=None, logging=False):
     model.to(device)
 
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.SGD(params, lr=arg.lr, momentum=0.9, weight_decay=0.0005)
+    optimizer = torch.optim.Adam(params, lr=arg.lr)
     logging = True if arg.logging == 1 else False
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging)
 
