@@ -40,11 +40,12 @@ def get_dataloader():
     return dataloader_train, dataloader_val, dataloader_test
 
 
-def get_model():
+def get_model(finetune=False):
     model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
-    # Freeze backbone layers
-    for param in model.parameters():
-        param.requires_grad = False
+    if finetune==False:
+        # Freeze backbone layers
+        for param in model.parameters():
+            param.requires_grad = False
 
     model = nn.Sequential(
         *[module for _, module in model.backbone.items()],
@@ -61,14 +62,14 @@ def get_model():
         nn.ReLU(),
         nn.BatchNorm2d(8),
         nn.Flatten(),
-        nn.Linear(448, 2),
+        nn.Linear(392, 2),
     )
     return model
 
 
-def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=False):
+def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=False, finetune=False):
     model.train()
-    best_loss = float('inf')
+    best_loss = test(model, dataset_val, device)
 
     for i in range(epoch):
         print("Training epoch: ", i+1, " / ", epoch, " ...")
@@ -102,7 +103,10 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=F
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/model_lr={}.pt".format(i+1, optimizer.param_groups[0]['lr'])
+                "ckpts/model_lr={}_{}.pt".format(
+                    optimizer.param_groups[0]['lr'],
+                    "finetune" if finetune else " ", 
+                    )
                 )
         
         # Log to wandb
@@ -184,13 +188,14 @@ def log_images(model, dataset, device):
     return dst
         
 
-def pipeline(ckpt=None, logging=False):
+def pipeline():
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
-    model = get_model()
-    if ckpt != None:
-        model.load_state_dict(torch.load(ckpt))
+    finetune = True if arg.finetune == 1 else False
+    model = get_model(finetune=finetune)
+    if arg.ckpt != None:
+        model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
 
     params = [p for p in model.parameters() if p.requires_grad]
@@ -200,7 +205,7 @@ def pipeline(ckpt=None, logging=False):
         wandb.init(project='ETT_point')
         wandb.config = {}
 
-    train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging)
+    train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging, finetune)
 
     print("Testing on test set ...")
     test_loss = test(model, dataloader_test, device)
@@ -216,6 +221,8 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=0.005, help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
     parser.add_argument('--epoch', type=int, default=20, help='Number of epochs')
+    parser.add_argument('--finetune', type=int, default=0, help='Finetune the model')
+    parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
 
     arg = parser.parse_args()
     pipeline()

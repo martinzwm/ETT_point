@@ -51,7 +51,7 @@ def draw_single_bbox(image, bbox):
 
 
 def downsize(image_dir='PNGImages', target_dir='downsized'):
-    resized_h, resized_w = 1154, 1075
+    resized_dim = 1024
     root = "/home/ec2-user/data/MIMIC_ETT_annotations"
     # load target.json
     f = open(os.path.join(root, 'annotations.json'))
@@ -63,7 +63,15 @@ def downsize(image_dir='PNGImages', target_dir='downsized'):
         image_path = os.path.join(root, image_dir, file_path)
         image = Image.open(image_path).convert("RGB")
         h, w = image.size
-        image = image.resize((resized_h, resized_w))
+
+        # crop
+        if h > w:
+            image = image.crop(((h-w)/2, 0, (h+w)/2, w)) # cut evenly from left and right
+        else:
+            image = image.crop((0, (w-h)*0.2, h, w-(w-h)*0.8)) # cut more from bottom and less from top
+
+        # resize
+        image = image.resize((resized_dim, resized_dim))
         image.save(os.path.join(root, "downsized", file_path))
 
     # downsize gt bbox
@@ -75,10 +83,10 @@ def downsize(image_dir='PNGImages', target_dir='downsized'):
                 w = data['images'][i]['height']
                 h = data['images'][i]['width']
                 break
-        ann['bbox'][0] = ann['bbox'][0] * resized_h / h
-        ann['bbox'][1] = ann['bbox'][1] * resized_w / w
-        ann['bbox'][2] = ann['bbox'][2] * resized_h / h
-        ann['bbox'][3] = ann['bbox'][3] * resized_w / w
+        ann['bbox'][0] = ann['bbox'][0] * resized_dim / h
+        ann['bbox'][1] = ann['bbox'][1] * resized_dim / w
+        ann['bbox'][2] = ann['bbox'][2] * resized_dim / h
+        ann['bbox'][3] = ann['bbox'][3] * resized_dim / w
     
     # save target.json
     with open(os.path.join(root, 'annotations_downsized.json'), 'w') as outfile:
@@ -105,4 +113,5 @@ def get_stats(image_dir='PNGImages'):
 
 if __name__ == "__main__":
     # view_gt_bbox(annotation_file='annotations_downsized.json', image_dir='downsized', target_dir='bbox3046_downsized')
-    get_stats("downsized")
+    # get_stats("PNGImages")
+    downsize()
