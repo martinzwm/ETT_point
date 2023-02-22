@@ -70,10 +70,6 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=F
     model.train()
     best_loss = float('inf')
 
-    if logging:
-        wandb.init(project='ETT_point')
-        wandb.config = {}
-
     for i in range(epoch):
         print("Training epoch: ", i+1, " / ", epoch, " ...")
         
@@ -106,7 +102,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=F
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/model_epoch={}_lr={}.pt".format(i+1, optimizer.param_groups[0]['lr'])
+                "ckpts/model_lr={}.pt".format(i+1, optimizer.param_groups[0]['lr'])
                 )
         
         # Log to wandb
@@ -117,8 +113,6 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=F
                 "val/loss": val_loss,
                 "images": wandb.Image(dst)
                 })
-    
-    wandb.finish()
         
 
 def test(model, dataset_test, device):
@@ -202,11 +196,18 @@ def pipeline(ckpt=None, logging=False):
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
     logging = True if arg.logging == 1 else False
+    if logging:
+        wandb.init(project='ETT_point')
+        wandb.config = {}
+
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging)
 
     print("Testing on test set ...")
-    test(model, dataloader_test, device)
+    test_loss = test(model, dataloader_test, device)
 
+    if logging:
+        wandb.log({"test/loss": test_loss})
+        wandb.finish()
 
 
 if __name__ == "__main__":   
