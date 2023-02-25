@@ -92,8 +92,17 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=F
             )
             centers = centers.to(device)
 
-            # L2 loss
-            loss = F.mse_loss(predicted, centers)
+            # Loss
+            if arg.loss == "mse":
+                loss = F.mse_loss(predicted, centers)
+            elif arg.loss == "piecewise":
+                # apply l2 loss if prediction is outside of bbox
+                masks = [out_bbox(predicted[i], bboxes[i]) for i in range(predicted.size(0))]
+                masks = torch.tensor(masks).to(device)
+                loss = [torch.sum((predicted[i] - centers[i]) ** 2)  for i in range(predicted.size(0))]
+                loss = torch.stack(loss, dim=0)
+                loss = torch.sum(loss * masks) / (predicted.size(0) * predicted.size(1))
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -194,6 +203,15 @@ def log_images(model, dataset, device):
     return dst
         
 
+def out_bbox(predicted, bbox):
+    # Check if the predicted center is inside the bounding box
+    if predicted[0] >= bbox[0] and predicted[0] <= bbox[2] and \
+        predicted[1] >= bbox[1] and predicted[1] <= bbox[3]:
+        return 0
+    else:
+        return 1
+
+
 def pipeline():
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -229,6 +247,7 @@ if __name__ == "__main__":
     parser.add_argument('--epoch', type=int, default=20, help='Number of epochs')
     parser.add_argument('--finetune', type=int, default=0, help='Finetune the model')
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
+    parser.add_argument('--loss', type=str, default='mse', help='Loss function')
 
     arg = parser.parse_args()
     pipeline()
