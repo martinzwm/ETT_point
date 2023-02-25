@@ -1,6 +1,6 @@
 import random
 import torch
-
+import math
 from torchvision.transforms import functional as F
 
 
@@ -42,6 +42,55 @@ class RandomHorizontalFlip(object):
                 keypoints = _flip_coco_person_keypoints(keypoints, width)
                 target["keypoints"] = keypoints
         return image, target
+
+
+class RandomTranslate(object):
+    def __init__(self, ratio):
+        self.ratio = ratio
+
+    def __call__(self, image, target):
+        height, width = image.shape[-2:]
+        pixels = int(min(height, width) * self.ratio)
+        shift_x = random.randint(-pixels, pixels)
+        shift_y = random.randint(-pixels, pixels)
+        image = F.affine(image, translate=(shift_x, shift_y), angle=0, scale=1, shear=0)
+        bbox = target["boxes"][0]
+        x, y, x_max, y_max = bbox
+        new_bbox = [x + shift_x, y + shift_y, x_max + shift_x, y_max + shift_y]
+        target["boxes"] = torch.tensor(new_bbox).view(1, 4)
+        return image, target
+
+
+class RandomRotate(object):
+    def __init__(self, angle):
+        self.angle = angle
+
+    def __call__(self, image, target):
+        angle = random.uniform(-self.angle, self.angle)
+        image = F.rotate(image, angle)
+
+        height, width = image.shape[-2:]
+        center = (width / 2, height / 2)
+        bbox = target["boxes"][0]
+        x, y, x_max, y_max = bbox
+        corners = [(x, y), (x_max, y), (x_max, y_max), (x, y_max)]
+        corners = [self.__rotate_point(c, center, angle) for c in corners]
+        x, y = zip(*corners)
+        new_bbox = [min(x), min(y), max(x), max(y)]
+        
+        target["boxes"] = torch.tensor(new_bbox).view(1, 4)
+        return image, target
+
+    def __rotate_point(self, point, center, angle):
+        """Rotate a point around a center point by an angle."""
+        x, y = point
+        cx, cy = center
+        radians = angle * math.pi / 180
+        cos = math.cos(radians)
+        sin = math.sin(radians)
+        nx = (cos * (x - cx)) + (sin * (y - cy)) + cx
+        ny = (cos * (y - cy)) - (sin * (x - cx)) + cy
+        return nx, ny
 
 
 class ToTensor(object):

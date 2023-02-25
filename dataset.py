@@ -17,6 +17,8 @@ def get_transform(train):
         )) # normalize
     if train:
         transforms.append(T.RandomHorizontalFlip(0.5))
+        transforms.append(T.RandomRotate(10))
+        transforms.append(T.RandomTranslate(0.1))
     return T.Compose(transforms)
 
 
@@ -106,6 +108,20 @@ class CXRDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.imgs)
+
+    def view_img(self, idx):
+        image, target = self.__getitem__(idx)
+        image = image.permute(1, 2, 0)
+        image = image.numpy()
+        image = image * [0.23071574, 0.23071574, 0.23071574]
+        image = image + [0.49271007, 0.49271007, 0.49271007]
+        image = image * 255
+        image = image.astype('uint8')
+        image = Image.fromarray(image)
+        draw = ImageDraw.Draw(image)
+        for box in target['boxes']:
+            draw.rectangle(box.tolist(), outline='red')
+        return image
 
 
 if __name__ == "__main__":

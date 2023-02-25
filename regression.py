@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import argparse
+from copy import deepcopy
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,17 +15,22 @@ from dataset import *
 
 
 def get_dataloader():
-    dataset = CXRDataset(
+    dataset_train = CXRDataset(
         root='/home/ec2-user/data/MIMIC_ETT_annotations', 
         image_dir='downsized',
         ann_file='annotations_downsized.json',
-        transforms=get_transform(train=False)
+        transforms=get_transform(train=True)
         )
-    val_size, test_size = len(dataset) // 3, len(dataset) // 3
-    dataset_train, dataset_val, dataset_test = torch.utils.data.random_split(
-        dataset, [len(dataset)-val_size-test_size, val_size, test_size]
-        )
-    dataset_train.dataset.transforms = get_transform(train=True)
+    dataset_val = deepcopy(dataset_train)
+    dataset_val.transforms = get_transform(train=False)
+    dataset_test = deepcopy(dataset_val)
+    N = len(dataset_train)
+
+    val_size, test_size = N // 3, N // 3
+    indices = torch.randperm(N).tolist()
+    dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
+    dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
+    dataset_test = torch.utils.data.Subset(dataset_test, indices[val_size+test_size:])
 
     # define training and validation data loaders
     dataloader_train = torch.utils.data.DataLoader(
