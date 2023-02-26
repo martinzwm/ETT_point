@@ -6,14 +6,16 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 import json
 import transforms as T
 
+MU = 0.49271007
+STD = 0.23071574
 
 # Data augementation
 def get_transform(train):
     transforms = []
     transforms.append(T.ToTensor()) # converts a PIL image to a PyTorch Tensor
     transforms.append(T.Normalize(
-        [0.49271007, 0.49271007, 0.49271007], 
-        [0.23071574, 0.23071574, 0.23071574]
+        [MU, MU, MU], 
+        [STD, STD, STD]
         )) # normalize
     if train:
         transforms.append(T.RandomHorizontalFlip(0.5))
@@ -109,19 +111,19 @@ class CXRDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.imgs)
 
-    def view_img(self, idx):
-        image, target = self.__getitem__(idx)
-        image = image.permute(1, 2, 0)
-        image = image.numpy()
-        image = image * [0.23071574, 0.23071574, 0.23071574]
-        image = image + [0.49271007, 0.49271007, 0.49271007]
-        image = image * 255
-        image = image.astype('uint8')
-        image = Image.fromarray(image)
-        draw = ImageDraw.Draw(image)
-        for box in target['boxes']:
-            draw.rectangle(box.tolist(), outline='red')
-        return image
+
+def view_img(image, bbox):
+    image = image.permute(1, 2, 0)
+    image = image.numpy()
+    image = image * [0.23071574, 0.23071574, 0.23071574]
+    image = image + [0.49271007, 0.49271007, 0.49271007]
+    image = image * 255
+    image = image.astype('uint8')
+    image = Image.fromarray(image)
+    draw = ImageDraw.Draw(image)
+    for box in bbox:
+        draw.rectangle(box.tolist(), outline='red')
+    return image
 
 
 if __name__ == "__main__":

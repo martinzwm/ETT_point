@@ -212,6 +212,35 @@ def out_bbox(predicted, bbox):
         return 1
 
 
+def crop_image(image, point, bbox):
+    # Crop the image around the point
+    C, H, W = image.size()
+    H_new, W_new = int(H * 0.5), int(W * 0.5)
+    x_min, x_max = max(0, int(point[0] - W_new*0.5)), min(W, int(point[0] + W_new*0.5))
+    y_min, y_max = max(0, int(point[1] - H_new*0.75)), min(H, int(point[1] + H_new*0.25))
+    image = image[:, y_min:y_max, x_min:x_max]
+
+    # Pad the image with color black if dimensions are not enough
+    if y_min == 0:
+        pad = torch.zeros(C, H_new - image.size()[1], image.size()[2]) - MU/STD
+        image = torch.cat((pad, image), dim=1)
+    elif y_max == H:
+        pad = torch.zeros(C, H_new - image.size()[1], image.size()[2]) - MU/STD
+        image = torch.cat((image, pad), dim=1)
+    if x_min == 0:
+        pad = torch.zeros(C, image.size()[1], W_new - image.size()[2]) - MU/STD
+        image = torch.cat((image, pad), dim=2)
+    elif x_max == W:
+        pad = torch.zeros(C, image.size()[1], W_new - image.size()[2]) - MU/STD
+        image = torch.cat((pad, image), dim=2)
+
+    # Transform the bbox according to the crop
+    bbox = deepcopy(bbox)
+    bbox[0][0], bbox[0][2] = bbox[0][0] - x_min, bbox[0][2] - x_min
+    bbox[0][1], bbox[0][3] = bbox[0][1] - y_min, bbox[0][3] - y_min
+    return image, bbox
+
+
 def pipeline():
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
