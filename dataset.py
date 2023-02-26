@@ -5,9 +5,8 @@ from PIL import Image, ImageFile, ImageDraw
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 import json
 import transforms as T
+from transforms import MU, STD
 
-MU = 0.49271007
-STD = 0.23071574
 
 # Data augementation
 def get_transform(train):

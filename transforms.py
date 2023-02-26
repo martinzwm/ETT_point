@@ -2,6 +2,7 @@ import random
 import torch
 import math
 from torchvision.transforms import functional as F
+from dataset import MU, STD
 
 
 def _flip_coco_person_keypoints(kps, width):
@@ -53,7 +54,7 @@ class RandomTranslate(object):
         pixels = int(min(height, width) * self.ratio)
         shift_x = random.randint(-pixels, pixels)
         shift_y = random.randint(-pixels, pixels)
-        image = F.affine(image, translate=(shift_x, shift_y), angle=0, scale=1, shear=0)
+        image = F.affine(image, translate=(shift_x, shift_y), angle=0, scale=1, shear=0, fill=-MU/STD)
         bbox = target["boxes"][0]
         x, y, x_max, y_max = bbox
         new_bbox = [x + shift_x, y + shift_y, x_max + shift_x, y_max + shift_y]
@@ -67,7 +68,7 @@ class RandomRotate(object):
 
     def __call__(self, image, target):
         angle = random.uniform(-self.angle, self.angle)
-        image = F.rotate(image, angle)
+        image = F.rotate(image, angle, fill=-MU/STD)
 
         height, width = image.shape[-2:]
         center = (width / 2, height / 2)
