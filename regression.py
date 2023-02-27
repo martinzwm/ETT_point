@@ -46,14 +46,19 @@ def get_dataloader():
     return dataloader_train, dataloader_val, dataloader_test
 
 
-def get_model(finetune=False):
+def get_model(model_num=1, finetune=False):
+    """
+    2 models to choose from:
+        - model 1: get rough location of carina from the full image
+        - model 2: get refined location of carina from cropped image based on model 1
+    """
     model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
     if finetune==False:
         # Freeze backbone layers
         for param in model.parameters():
             param.requires_grad = False
 
-    model = nn.Sequential(
+    modules = [
         *[module for _, module in model.backbone.items()],
         nn.Conv2d(2048, 512, kernel_size=(3, 3), stride=(2, 2)),
         nn.ReLU(),
@@ -68,8 +73,14 @@ def get_model(finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(8),
         nn.Flatten(),
-        nn.Linear(392, 2),
-    )
+    ]
+    if model_num == 1:
+        modules.append(nn.Linear(392, 2))
+    elif model_num == 2:
+        modules.append(nn.Linear(72, 2))
+    
+    model = nn.Sequential(*modules)
+    model.name = model_num
     return model
 
 
@@ -118,9 +129,9 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=F
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/model_lr={}_{}.pt".format(
+                "ckpts/model{}_lr={}.pt".format(
+                    arg.model_num,
                     optimizer.param_groups[0]['lr'],
-                    "finetune" if finetune else " ", 
                     )
                 )
         
@@ -161,7 +172,117 @@ def test(model, dataset_test, device):
     return avg_loss
 
 
-def log_images(model, dataset, device):
+def train_2(model, model_1, dataset_train, dataset_val, optimizer, device, epoch, logging=False, finetune=False):
+    """ Train the 2nd model (refined location of carina) """
+    model.train()
+    model_1.to(device)
+    model_1.eval()
+    best_loss = test_2(model, model_1, dataset_val, device)
+
+    for i in range(epoch):
+        print("Training epoch: ", i+1, " / ", epoch, " ...")
+        
+        for images, targets in dataset_train:
+            # Predict carina location using model 1 (evaluation mode)
+            images = torch.stack([image for image in images], dim=0)
+            images = images.to(device)
+            predicted = model_1(images)
+
+            bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
+            centers = torch.stack(
+                [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
+                dim=1
+            )
+
+            # Refine carina location using model 2 (training mode)
+            images, bboxes = crop_images(images, predicted, bboxes)
+            predicted = model(images)
+            centers = torch.stack(
+                [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
+                dim=1
+            )
+            centers = centers.to(device)
+
+            # Loss
+            if arg.loss == "mse":
+                loss = F.mse_loss(predicted, centers)
+            elif arg.loss == "piecewise":
+                # apply l2 loss if prediction is outside of bbox
+                masks = [out_bbox(predicted[i], bboxes[i]) for i in range(predicted.size(0))]
+                masks = torch.tensor(masks).to(device)
+                loss = [torch.sum((predicted[i] - centers[i]) ** 2)  for i in range(predicted.size(0))]
+                loss = torch.stack(loss, dim=0)
+                loss = torch.sum(loss * masks) / (predicted.size(0) * predicted.size(1))
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        # Progress report
+        print("Training set", end=" ")
+        train_loss = test_2(model, model_1, dataset_train, device)
+        print("Validation set", end=" ")
+        val_loss = test_2(model, model_1, dataset_val, device)
+
+        # Save best model so far
+        if val_loss < best_loss:
+            best_loss = val_loss
+            torch.save(
+                model.state_dict(), 
+                "ckpts/model_lr={}_{}.pt".format(
+                    optimizer.param_groups[0]['lr'],
+                    "finetune" if finetune else " ", 
+                    )
+                )
+        
+        # Log to wandb
+        if logging:
+            dst = log_images(model, dataset_val, device, model_1=model_1)
+            wandb.log({
+                "train/loss": train_loss, 
+                "val/loss": val_loss,
+                "images": wandb.Image(dst)
+                })
+            
+
+def test_2(model, model_1, dataset_test, device):
+    model.eval()
+    model_1.eval()
+    dist = []
+
+    for images, targets in dataset_test:
+        # Predict carina location using model 1 (evaluation mode)
+        images = torch.stack([image for image in images], dim=0)
+        images = images.to(device)
+        predicted = model_1(images)
+
+        bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
+        centers = torch.stack(
+            [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
+            dim=1
+        )
+
+        # Refine carina location using model 2 (training mode)
+        images, bboxes = crop_images(images, predicted, bboxes)
+        predicted = model(images)
+        centers = torch.stack(
+            [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
+            dim=1
+        )
+        centers = centers.to(device)
+
+        with torch.no_grad():
+            # L2 loss
+            loss = F.mse_loss(predicted, centers)
+            loss = torch.sqrt(loss)
+            dist.append(loss.item())
+    
+    avg_loss = sum(dist) / len(dist)
+    print("Average L2 loss: ", avg_loss)
+    return avg_loss
+
+
+def log_images(model, dataset, device, model_1=None):
     # Randomly select 3 images from the validation set, and plot the predicted center
     # and the ground truth center.
     indices = np.random.choice(len(dataset), size=3, replace=False)
@@ -171,10 +292,14 @@ def log_images(model, dataset, device):
         image, target = dataset.dataset[i]
         image.unsqueeze_(0)
         image = image.to(device)
+        gt_box = target['boxes']
+        if model_1 is not None:
+            predicted = model_1(image)
+            image, gt_box = crop_images(image, predicted, target['boxes'])
         predicted = model(image)
         predicted = predicted.cpu().detach().numpy()[0]
 
-        gt_box = target['boxes'].squeeze(0).cpu().detach().numpy()
+        gt_box = gt_box.squeeze(0).cpu().detach().numpy()
         gt = [(gt_box[0] + gt_box[2]) / 2, (gt_box[1] + gt_box[3]) / 2]
 
         # Plot the image using PIL
@@ -212,6 +337,17 @@ def out_bbox(predicted, bbox):
         return 1
 
 
+def crop_images(images, points, bboxs):
+    images_new, bboxs_new = [], []
+    for i in range(len(images)):
+        image, point, bbox = images[i], points[i], bboxs[i]
+        image, bbox = crop_image(image, point, bbox)
+        images_new.append(image)
+        bboxs_new.append(bbox)
+    images_new, bboxs_new = torch.stack(images_new, dim=0), torch.stack(bboxs_new, dim=0)
+    return images_new, bboxs_new
+
+
 def crop_image(image, point, bbox):
     # Crop the image around the point
     C, H, W = image.size()
@@ -221,23 +357,24 @@ def crop_image(image, point, bbox):
     image = image[:, y_min:y_max, x_min:x_max]
 
     # Pad the image with color black if dimensions are not enough
+    device = image.device
     if y_min == 0:
-        pad = torch.zeros(C, H_new - image.size()[1], image.size()[2]) - MU/STD
+        pad = torch.zeros(C, H_new - image.size()[1], image.size()[2]).to(device) - MU/STD
         image = torch.cat((pad, image), dim=1)
     elif y_max == H:
-        pad = torch.zeros(C, H_new - image.size()[1], image.size()[2]) - MU/STD
+        pad = torch.zeros(C, H_new - image.size()[1], image.size()[2]).to(device) - MU/STD
         image = torch.cat((image, pad), dim=1)
     if x_min == 0:
-        pad = torch.zeros(C, image.size()[1], W_new - image.size()[2]) - MU/STD
+        pad = torch.zeros(C, image.size()[1], W_new - image.size()[2]).to(device) - MU/STD
         image = torch.cat((image, pad), dim=2)
     elif x_max == W:
-        pad = torch.zeros(C, image.size()[1], W_new - image.size()[2]) - MU/STD
+        pad = torch.zeros(C, image.size()[1], W_new - image.size()[2]).to(device) - MU/STD
         image = torch.cat((pad, image), dim=2)
 
     # Transform the bbox according to the crop
     bbox = deepcopy(bbox)
-    bbox[0][0], bbox[0][2] = bbox[0][0] - x_min, bbox[0][2] - x_min
-    bbox[0][1], bbox[0][3] = bbox[0][1] - y_min, bbox[0][3] - y_min
+    bbox[0], bbox[2] = bbox[0] - x_min, bbox[2] - x_min
+    bbox[1], bbox[3] = bbox[1] - y_min, bbox[3] - y_min
     return image, bbox
 
 
@@ -246,7 +383,7 @@ def pipeline():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
     finetune = True if arg.finetune == 1 else False
-    model = get_model(finetune=finetune)
+    model = get_model(model_num=arg.model_num, finetune=finetune)
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
@@ -257,11 +394,19 @@ def pipeline():
     if logging:
         wandb.init(project='ETT_point')
         wandb.config = {}
-
-    train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging, finetune)
-
-    print("Testing on test set ...")
-    test_loss = test(model, dataloader_test, device)
+    
+    if arg.model_num == 1:
+        train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging, finetune)
+        print("Testing on test set ...")
+        test_loss = test(model, dataloader_test, device)
+    elif arg.model_num == 2:
+        if arg.model1_ckpt == None:
+            raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
+        model_1 = get_model(model_num=1)
+        model_1.load_state_dict(torch.load(arg.model1_ckpt))
+        train_2(model, model_1, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging, finetune)
+        print("Testing on test set ...")
+        test_loss = test_2(model, model_1, dataloader_test, device)
 
     if logging:
         wandb.log({"test/loss": test_loss})
@@ -277,6 +422,8 @@ if __name__ == "__main__":
     parser.add_argument('--finetune', type=int, default=0, help='Finetune the model')
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
     parser.add_argument('--loss', type=str, default='mse', help='Loss function')
+    parser.add_argument('--model_num', type=int, default=1, help='Model number')
+    parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
 
     arg = parser.parse_args()
     pipeline()
