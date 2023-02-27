@@ -114,8 +114,8 @@ class CXRDataset(torch.utils.data.Dataset):
 def view_img(image, bbox):
     image = image.permute(1, 2, 0)
     image = image.numpy()
-    image = image * [0.23071574, 0.23071574, 0.23071574]
-    image = image + [0.49271007, 0.49271007, 0.49271007]
+    image = image * [STD, STD, STD]
+    image = image + [MU, MU, MU]
     image = image * 255
     image = image.astype('uint8')
     image = Image.fromarray(image)

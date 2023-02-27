@@ -44,14 +44,14 @@ def get_dataloader():
     return dataloader_train, dataloader_val, dataloader_test
 
 
-def get_model(model_num=1, finetune=False):
+def get_model(model_num=1):
     """
     2 models to choose from:
         - model 1: get rough location of carina from the full image
         - model 2: get refined location of carina from cropped image based on model 1
     """
     model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
-    if finetune==False:
+    if arg.finetune==False:
         # Freeze backbone layers
         for param in model.parameters():
             param.requires_grad = False
@@ -82,7 +82,7 @@ def get_model(model_num=1, finetune=False):
     return model
 
 
-def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=False, finetune=False):
+def train(model, dataset_train, dataset_val, optimizer, device, epoch):
     model.train()
     best_loss = test(model, dataset_val, device)
 
@@ -134,7 +134,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, logging=F
                 )
         
         # Log to wandb
-        if logging:
+        if arg.logging:
             dst = log_images(model, dataset_val, device)
             wandb.log({
                 "train/loss": train_loss, 
@@ -170,7 +170,7 @@ def test(model, dataset_test, device):
     return avg_loss
 
 
-def train_2(model, model_1, dataset_train, dataset_val, optimizer, device, epoch, logging=False, finetune=False):
+def train_2(model, model_1, dataset_train, dataset_val, optimizer, device, epoch):
     """ Train the 2nd model (refined location of carina) """
     model.train()
     model_1.to(device)
@@ -234,7 +234,7 @@ def train_2(model, model_1, dataset_train, dataset_val, optimizer, device, epoch
                 )
         
         # Log to wandb
-        if logging:
+        if arg.logging:
             dst = log_images(model, dataset_val, device, model_1=model_1)
             wandb.log({
                 "train/loss": train_loss, 
@@ -284,21 +284,20 @@ def pipeline():
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
-    finetune = True if arg.finetune == 1 else False
-    model = get_model(model_num=arg.model_num, finetune=finetune)
+    
+    model = get_model(model_num=arg.model_num)
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
 
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
-    logging = True if arg.logging == 1 else False
-    if logging:
+    if arg.logging:
         wandb.init(project='ETT_point')
         wandb.config = {}
     
     if arg.model_num == 1:
-        train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging, finetune)
+        train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch)
         print("Testing on test set ...")
         test_loss = test(model, dataloader_test, device)
     elif arg.model_num == 2:
@@ -306,11 +305,11 @@ def pipeline():
             raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
         model_1 = get_model(model_num=1)
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
-        train_2(model, model_1, dataloader_train, dataloader_val, optimizer, device, arg.epoch, logging, finetune)
+        train_2(model, model_1, dataloader_train, dataloader_val, optimizer, device, arg.epoch)
         print("Testing on test set ...")
         test_loss = test_2(model, model_1, dataloader_test, device)
 
-    if logging:
+    if arg.logging:
         wandb.log({"test/loss": test_loss})
         wandb.finish()
 
@@ -328,4 +327,6 @@ if __name__ == "__main__":
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
 
     arg = parser.parse_args()
+    arg.logging = True if arg.logging == 1 else False
+    arg.finetune = True if arg.finetune == 1 else False
     pipeline()
