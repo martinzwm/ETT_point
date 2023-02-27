@@ -82,19 +82,31 @@ def get_model(model_num=1):
     return model
 
 
-def train(model, dataset_train, dataset_val, optimizer, device, epoch):
+def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=None):
     model.train()
-    best_loss = test(model, dataset_val, device)
+    if model_1:
+        model_1.eval()
+        model_1.to(device)
+    best_loss = test(model, dataset_val, device, model_1)
 
     for i in range(epoch):
         print("Training epoch: ", i+1, " / ", epoch, " ...")
         
         for images, targets in dataset_train:
+            # Load images
             images = torch.stack([image for image in images], dim=0)
             images = images.to(device)
+
+            # Load gt
+            bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
+            
+            # Predict
+            if model_1 is not None: # predict rough location of carina using model 1
+                predicted = model_1(images)
+                images, bboxes = crop_images(images, predicted, bboxes)
             predicted = model(images)
 
-            bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
+            # gt center
             centers = torch.stack(
                 [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
                 dim=1
@@ -118,9 +130,9 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch):
 
         # Progress report
         print("Training set", end=" ")
-        train_loss = test(model, dataset_train, device)
+        train_loss = test(model, dataset_train, device, model_1)
         print("Validation set", end=" ")
-        val_loss = test(model, dataset_val, device)
+        val_loss = test(model, dataset_val, device, model_1)
 
         # Save best model so far
         if val_loss < best_loss:
@@ -143,126 +155,27 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch):
                 })
         
 
-def test(model, dataset_test, device):
+def test(model, dataset_test, device, model_1=None):
     model.eval()
+    if model_1 is not None:
+        model_1.eval()
     dist = []
 
     for images, targets in dataset_test:
+        # Load image
         images = torch.stack([image for image in images], dim=0)
         images = images.to(device)
-        predicted = model(images)
 
+        # Load gt box
         bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
-        centers = torch.stack(
-            [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
-            dim=1
-        )
-        centers = centers.to(device)
 
-        with torch.no_grad():
-            # L2 loss
-            loss = F.mse_loss(predicted, centers)
-            loss = torch.sqrt(loss)
-            dist.append(loss.item())
-    
-    avg_loss = sum(dist) / len(dist)
-    print("Average L2 loss: ", avg_loss)
-    return avg_loss
-
-
-def train_2(model, model_1, dataset_train, dataset_val, optimizer, device, epoch):
-    """ Train the 2nd model (refined location of carina) """
-    model.train()
-    model_1.to(device)
-    model_1.eval()
-    best_loss = test_2(model, model_1, dataset_val, device)
-
-    for i in range(epoch):
-        print("Training epoch: ", i+1, " / ", epoch, " ...")
-        
-        for images, targets in dataset_train:
-            # Predict carina location using model 1 (evaluation mode)
-            images = torch.stack([image for image in images], dim=0)
-            images = images.to(device)
+        # Predict
+        if model_1 is not None: # predict rough location of carina using model 1
             predicted = model_1(images)
-
-            bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
-            centers = torch.stack(
-                [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
-                dim=1
-            )
-
-            # Refine carina location using model 2 (training mode)
             images, bboxes = crop_images(images, predicted, bboxes)
-            predicted = model(images)
-            centers = torch.stack(
-                [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
-                dim=1
-            )
-            centers = centers.to(device)
-
-            # Loss
-            if arg.loss == "mse":
-                loss = F.mse_loss(predicted, centers)
-            elif arg.loss == "piecewise":
-                # apply l2 loss if prediction is outside of bbox
-                masks = [out_bbox(predicted[i], bboxes[i]) for i in range(predicted.size(0))]
-                masks = torch.tensor(masks).to(device)
-                loss = [torch.sum((predicted[i] - centers[i]) ** 2)  for i in range(predicted.size(0))]
-                loss = torch.stack(loss, dim=0)
-                loss = torch.sum(loss * masks) / (predicted.size(0) * predicted.size(1))
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-        # Progress report
-        print("Training set", end=" ")
-        train_loss = test_2(model, model_1, dataset_train, device)
-        print("Validation set", end=" ")
-        val_loss = test_2(model, model_1, dataset_val, device)
-
-        # Save best model so far
-        if val_loss < best_loss:
-            best_loss = val_loss
-            torch.save(
-                model.state_dict(), 
-                "ckpts/model{}_lr={}.pt".format(
-                    arg.model_num,
-                    optimizer.param_groups[0]['lr'],
-                    )
-                )
+        predicted = model(images) # predict refined location of carina using model 2
         
-        # Log to wandb
-        if arg.logging:
-            dst = log_images(model, dataset_val, device, model_1=model_1)
-            wandb.log({
-                "train/loss": train_loss, 
-                "val/loss": val_loss,
-                "images": wandb.Image(dst)
-                })
-            
-
-def test_2(model, model_1, dataset_test, device):
-    model.eval()
-    model_1.eval()
-    dist = []
-
-    for images, targets in dataset_test:
-        # Predict carina location using model 1 (evaluation mode)
-        images = torch.stack([image for image in images], dim=0)
-        images = images.to(device)
-        predicted = model_1(images)
-
-        bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
-        centers = torch.stack(
-            [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
-            dim=1
-        )
-
-        # Refine carina location using model 2 (training mode)
-        images, bboxes = crop_images(images, predicted, bboxes)
-        predicted = model(images)
+        # gt center
         centers = torch.stack(
             [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
             dim=1
@@ -295,19 +208,17 @@ def pipeline():
     if arg.logging:
         wandb.init(project='ETT_point')
         wandb.config = {}
-    
-    if arg.model_num == 1:
-        train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch)
-        print("Testing on test set ...")
-        test_loss = test(model, dataloader_test, device)
-    elif arg.model_num == 2:
+
+    model_1 = None
+    if arg.model_num == 2:
         if arg.model1_ckpt == None:
             raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
         model_1 = get_model(model_num=1)
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
-        train_2(model, model_1, dataloader_train, dataloader_val, optimizer, device, arg.epoch)
-        print("Testing on test set ...")
-        test_loss = test_2(model, model_1, dataloader_test, device)
+    
+    train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
+    print("Testing on test set ...")
+    test_loss = test(model, dataloader_test, device, model_1)
 
     if arg.logging:
         wandb.log({"test/loss": test_loss})
