@@ -14,7 +14,7 @@ from pipeline_utils import *
 
 def get_dataloader():
     dataset_train = CXRDataset(
-        root='/home/ec2-user/data/MIMIC_ETT_annotations', 
+        root=arg.dataset_path, 
         image_dir='downsized',
         ann_file='annotations_downsized.json',
         transforms=get_transform(train=True)
@@ -86,7 +86,6 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
     model.train()
     if model_1:
         model_1.eval()
-        model_1.to(device)
     best_loss = test(model, dataset_val, device, model_1)
 
     for i in range(epoch):
@@ -147,7 +146,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         
         # Log to wandb
         if arg.logging:
-            dst = log_images(model, dataset_val, device)
+            dst = log_images(model, dataset_val, device, model_1)
             wandb.log({
                 "train/loss": train_loss, 
                 "val/loss": val_loss,
@@ -215,7 +214,8 @@ def pipeline():
             raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
         model_1 = get_model(model_num=1)
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
-    
+        model_1.to(device)
+
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
     print("Testing on test set ...")
     test_loss = test(model, dataloader_test, device, model_1)
@@ -236,6 +236,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss', type=str, default='mse', help='Loss function')
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
+    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC_ETT_annotations', help='Path for dataset')
 
     arg = parser.parse_args()
     arg.logging = True if arg.logging == 1 else False

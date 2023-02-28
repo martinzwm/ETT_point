@@ -85,6 +85,7 @@ class CXRDataset(torch.utils.data.Dataset):
             ymin = ann['bbox'][1]
             ymax = ann['bbox'][1] + ann['bbox'][3]
             boxes.append([xmin, ymin, xmax, ymax])
+            break
 
         # if len(boxes) == 0:
         #     boxes = [[0, 0, 0, 0]] # temp fix for pictures without ETT
