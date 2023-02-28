@@ -4,9 +4,12 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-def view_gt_bbox(annotation_file='annotations.json', image_dir='PNGImages', target_dir='bbox3046'):
-    root = "/home/ec2-user/data/MIMIC_ETT_annotations"
-    # load target.json
+
+def view_gt_bbox(
+    root="/home/ec2-user/data/MIMIC_ETT_annotations", 
+    annotation_file='annotations.json', 
+    image_dir='PNGImages', target_dir='bbox3046'):
+    # load annotations.json
     f = open(os.path.join(root, annotation_file))
     data = json.load(f)
 
@@ -50,9 +53,10 @@ def draw_single_bbox(image, bbox):
     return image
 
 
-def downsize(image_dir='PNGImages', target_dir='downsized'):
+def downsize(
+    root="/home/ec2-user/data/MIMIC_ETT_annotations", 
+    image_dir='PNGImages', target_dir='downsized'):
     resized_dim = 1024
-    root = "/home/ec2-user/data/MIMIC_ETT_annotations"
     # load target.json
     f = open(os.path.join(root, 'annotations.json'))
     data = json.load(f)
@@ -78,6 +82,9 @@ def downsize(image_dir='PNGImages', target_dir='downsized'):
     for i, ann in enumerate(data['annotations']):
         if ann['image_id'] == 2946144: # corrupted image
             continue
+        if "bbox" not in ann:
+            print(ann)
+            continue
         for i in range(len(data['images'])):
             if data['images'][i]['id'] == ann['image_id']:
                 w = data['images'][i]['height']
@@ -93,8 +100,7 @@ def downsize(image_dir='PNGImages', target_dir='downsized'):
         json.dump(data, outfile)
 
 
-def get_stats(image_dir='PNGImages'):
-    root = "/home/ec2-user/data/MIMIC_ETT_annotations"
+def get_stats(root="/home/ec2-user/data/MIMIC_ETT_annotations", image_dir='PNGImages'):
     # find mean and std of images in folder
     mean = [0, 0, 0]
     std = [0, 0, 0]
@@ -112,6 +118,10 @@ def get_stats(image_dir='PNGImages'):
     
 
 if __name__ == "__main__":
-    # view_gt_bbox(annotation_file='annotations_downsized.json', image_dir='downsized', target_dir='bbox3046_downsized')
-    # get_stats("PNGImages")
-    downsize()
+    # downsize(root="/home/ec2-user/data/MIMIC-981", image_dir='PNGImages', target_dir='downsized')
+    view_gt_bbox(
+        root="/home/ec2-user/data/MIMIC-981", 
+        annotation_file='annotations_downsized.json', 
+        image_dir='downsized', target_dir='bbox3046_downsized')
+    # get_stats(root="/home/ec2-user/data/MIMIC-981", image_dir='downsized')
+    

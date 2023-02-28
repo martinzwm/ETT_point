@@ -2,8 +2,12 @@ import random
 import torch
 import math
 from torchvision.transforms import functional as F
-MU = 0.49271007
-STD = 0.23071574
+dataset = "MIMIC-100"
+if dataset == "MIMIC-100":
+    MU, STD = 0.49271007, 0.23071574
+elif dataset == "MIMIC-1000":
+    MU, STD = 0.49714759, 0.21722301
+
 
 def _flip_coco_person_keypoints(kps, width):
     flip_inds = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
