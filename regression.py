@@ -141,7 +141,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
                 model.state_dict(), 
                 "ckpts/model{}_lr={}_bs={}_loss={}.pt".format(
                     arg.model_num,
-                    optimizer.param_groups[0]['lr'],
+                    round(optimizer.param_groups[0]['lr'], 5),
                     arg.batch_size,
                     arg.loss,
                     )
@@ -196,7 +196,7 @@ def test(model, dataset_test, device, model_1=None):
     return avg_loss
 
 
-def pipeline():
+def pipeline(evaluate=False):
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
@@ -206,12 +206,6 @@ def pipeline():
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
 
-    params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.Adam(params, lr=arg.lr)
-    if arg.logging:
-        wandb.init(project='ETT-MIMIC-1105')
-        wandb.config = {}
-
     model_1 = None
     if arg.model_num == 2:
         if arg.model1_ckpt == None:
@@ -220,8 +214,27 @@ def pipeline():
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
         model_1.to(device)
 
+    if evaluate:
+        print("Testing on test set ...")
+        test_loss = test(model, dataloader_test, device, model_1)
+        return
+
+    params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(params, lr=arg.lr)
+    if arg.logging:
+        wandb.init(project='ETT-MIMIC-1105')
+        wandb.config = {}
+
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
     print("Testing on test set ...")
+    model.load_state_dict(torch.load(
+        "ckpts/model{}_lr={}_bs={}_loss={}.pt".format(
+            arg.model_num,
+            round(optimizer.param_groups[0]['lr'], 5),
+            arg.batch_size,
+            arg.loss,
+            )
+        ))
     test_loss = test(model, dataloader_test, device, model_1)
 
     if arg.logging:
@@ -281,13 +294,15 @@ if __name__ == "__main__":
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
     parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC_ETT_annotations', help='Path for dataset')
     parser.add_argument('--search', type=int, default=0, help='Hyperparameter search')
+    parser.add_argument('--evaluate', type=int, default=0, help='Evaluate the model')
 
     arg = parser.parse_args()
     arg.logging = True if arg.logging == 1 else False
     arg.finetune = True if arg.finetune == 1 else False
     arg.search = True if arg.search == 1 else False
+    arg.evaluate = True if arg.evaluate == 1 else False
     
     if arg.search:
         hyperparameter_search()
     else:
-        pipeline()
+        pipeline(arg.evaluate)
