@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import utils
 import wandb
+import numpy as np
 
 from dataset import *
 from pipeline_utils import *
@@ -24,7 +25,7 @@ def get_dataloader():
     dataset_test = deepcopy(dataset_val)
     N = len(dataset_train)
 
-    val_size, test_size = N // 3, N // 3
+    val_size, test_size = int(N * 0.2), int(N * 0.2)
     indices = torch.randperm(N).tolist()
     dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
     dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
@@ -138,9 +139,11 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/model{}_lr={}.pt".format(
+                "ckpts/model{}_lr={}_bs={}_loss={}.pt".format(
                     arg.model_num,
                     optimizer.param_groups[0]['lr'],
+                    arg.batch_size,
+                    arg.loss,
                     )
                 )
         
@@ -152,6 +155,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
                 "val/loss": val_loss,
                 "images": wandb.Image(dst)
                 })
+    return val_loss
         
 
 def test(model, dataset_test, device, model_1=None):
@@ -205,7 +209,7 @@ def pipeline():
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
     if arg.logging:
-        wandb.init(project='ETT_point')
+        wandb.init(project='ETT-MIMIC-1105')
         wandb.config = {}
 
     model_1 = None
@@ -225,6 +229,45 @@ def pipeline():
         wandb.finish()
 
 
+def search_objective():
+    wandb.init(project='ETT-MIMIC-1105')
+    config = wandb.config
+    print(config)
+    arg.lr = config['lr']
+    arg.batch_size = config['batch_size']
+    arg.loss = config['loss']
+
+    torch.manual_seed(1234)
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    dataloader_train, dataloader_val, _ = get_dataloader()
+    
+    model = get_model(model_num=arg.model_num)
+    if arg.ckpt != None:
+        model.load_state_dict(torch.load(arg.ckpt))
+    model.to(device)
+
+    params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(params, lr=arg.lr)
+    val_loss = train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1=None)
+    wandb.log({"loss": val_loss})
+
+
+def hyperparameter_search():
+    sweep_configuration = {
+        'method': 'random',
+        'metric': {'goal': 'minimize', 'name': 'loss'},
+        'parameters': 
+        {
+            'lr': {'distribution': 'log_uniform', 'min': np.log(1e-4), 'max': np.log(1e-2)},
+            'batch_size': {'values': [2, 4, 8, 16]},
+            'loss': {'values': ['mse', 'piecewise']},
+        }
+    }
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-MIMIC-1105')
+    wandb.agent(sweep_id, function=search_objective, count=10)
+    wandb.finish()
+
+
 if __name__ == "__main__":   
     parser = argparse.ArgumentParser(description='Regression model')
     parser.add_argument('--logging', type=int, default=1, help='Enable logging to wandb')
@@ -237,8 +280,14 @@ if __name__ == "__main__":
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
     parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC_ETT_annotations', help='Path for dataset')
+    parser.add_argument('--search', type=int, default=0, help='Hyperparameter search')
 
     arg = parser.parse_args()
     arg.logging = True if arg.logging == 1 else False
     arg.finetune = True if arg.finetune == 1 else False
-    pipeline()
+    arg.search = True if arg.search == 1 else False
+    
+    if arg.search:
+        hyperparameter_search()
+    else:
+        pipeline()

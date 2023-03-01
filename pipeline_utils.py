@@ -3,6 +3,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 import numpy as np
 import torch
 from copy import deepcopy
+from dataset import view_img
 
 from transforms import MU, STD
 
@@ -31,8 +32,8 @@ def log_images(model, dataset, device, model_1=None):
         image = image.cpu().detach().numpy()[0]
         image = np.moveaxis(image, 0, -1)
         # unnormalize
-        mean = np.array([0.49271007, 0.49271007, 0.49271007])
-        std = np.array([0.23071574, 0.23071574, 0.23071574])
+        mean = np.array([MU, MU, MU])
+        std = np.array([STD, STD, STD])
         image = std * image + mean
         image = (image * 255).astype(np.uint8)
         image = Image.fromarray(image)
