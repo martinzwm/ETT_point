@@ -66,13 +66,13 @@ def downsize(
         print(file_path)
         image_path = os.path.join(root, image_dir, file_path)
         image = Image.open(image_path).convert("RGB")
-        h, w = image.size
+        w, h = image.size
 
         # crop
-        if h > w:
-            image = image.crop(((h-w)/2, 0, (h+w)/2, w)) # cut evenly from left and right
+        if w > h:
+            image = image.crop(((w-h)/2, 0, (w+h)/2, h)) # cut evenly from left and right
         else:
-            image = image.crop((0, (w-h)*0.2, h, w-(w-h)*0.8)) # cut more from bottom and less from top
+            image = image.crop((0, (h-w)*0.2, w, h-(h-w)*0.8)) # cut more from bottom and less from top
 
         # resize
         image = image.resize((resized_dim, resized_dim))
@@ -83,17 +83,22 @@ def downsize(
         if ann['image_id'] == 2946144: # corrupted image
             continue
         if "bbox" not in ann:
-            print(ann)
+            # print(ann)
             continue
         for i in range(len(data['images'])):
             if data['images'][i]['id'] == ann['image_id']:
-                w = data['images'][i]['height']
-                h = data['images'][i]['width']
+                h = data['images'][i]['height']
+                w = data['images'][i]['width']
                 break
-        ann['bbox'][0] = ann['bbox'][0] * resized_dim / h
-        ann['bbox'][1] = ann['bbox'][1] * resized_dim / w
-        ann['bbox'][2] = ann['bbox'][2] * resized_dim / h
-        ann['bbox'][3] = ann['bbox'][3] * resized_dim / w
+        curr_dim = min(w, h)
+        if w > h:
+            ann['bbox'][0] = ann['bbox'][0] - (w-h)/2
+        else:
+            ann['bbox'][1] = ann['bbox'][1] - (h-w)*0.2
+        ann['bbox'][0] = ann['bbox'][0] * resized_dim / curr_dim
+        ann['bbox'][1] = ann['bbox'][1] * resized_dim / curr_dim
+        ann['bbox'][2] = ann['bbox'][2] * resized_dim / curr_dim
+        ann['bbox'][3] = ann['bbox'][3] * resized_dim / curr_dim
     
     # save target.json
     with open(os.path.join(root, 'annotations_downsized.json'), 'w') as outfile:
