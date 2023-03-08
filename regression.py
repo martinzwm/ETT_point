@@ -284,15 +284,15 @@ def hyperparameter_search():
 if __name__ == "__main__":   
     parser = argparse.ArgumentParser(description='Regression model')
     parser.add_argument('--logging', type=int, default=1, help='Enable logging to wandb')
-    parser.add_argument('--lr', type=float, default=0.005, help='Learning rate')
-    parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
+    parser.add_argument('--lr', type=float, default=0.0005, help='Learning rate')
+    parser.add_argument('--batch_size', type=int, default=4, help='Batch size')
     parser.add_argument('--epoch', type=int, default=20, help='Number of epochs')
     parser.add_argument('--finetune', type=int, default=0, help='Finetune the model')
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
     parser.add_argument('--loss', type=str, default='mse', help='Loss function')
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
-    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC_ETT_annotations', help='Path for dataset')
+    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105', help='Path for dataset')
     parser.add_argument('--search', type=int, default=0, help='Hyperparameter search')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluate the model')
 
