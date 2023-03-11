@@ -18,7 +18,7 @@ def get_transform(train):
         )) # normalize
     if train:
         transforms.append(T.RandomHorizontalFlip(0.5))
-        transforms.append(T.RandomRotate(10))
+        # transforms.append(T.RandomRotate(10))
         transforms.append(T.RandomTranslate(0.1))
     return T.Compose(transforms)
 
