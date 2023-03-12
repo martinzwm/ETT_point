@@ -191,7 +191,7 @@ def pipeline(evaluate=False):
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
     if arg.logging:
-        wandb.init(project='ETT-MIMIC-1105')
+        wandb.init(project='ETT-MIMIC-1105-224')
         wandb.config = {}
 
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
@@ -213,18 +213,24 @@ def pipeline(evaluate=False):
 
 
 def search_objective():
-    wandb.init(project='ETT-MIMIC-1105')
+    wandb.init(project='ETT-MIMIC-1105-224')
     config = wandb.config
-    print(config)
-    arg.lr = config['lr']
+    arg.backbone = config['backbone']
+    arg.lr = round(config['lr'], 5)
     arg.batch_size = config['batch_size']
     arg.loss = config['loss']
+    print(arg.backbone, arg.lr, arg.batch_size, arg.loss)
 
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, _ = get_dataloader()
     
-    model = get_model(backbone=arg.backbone, model_num=arg.model_num)
+    if arg.backbone == "chexzero": # need to change the working directory to import chexzero
+        os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
+        os.chdir(os.path.join(os.getcwd(), ".."))
+    else:
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
@@ -241,13 +247,16 @@ def hyperparameter_search():
         'metric': {'goal': 'minimize', 'name': 'loss'},
         'parameters': 
         {
-            'lr': {'distribution': 'log_uniform', 'min': np.log(1e-4), 'max': np.log(1e-2)},
+            'backbone': {'values': ['resnet', 'chexzero']},
+            'lr': {'distribution': 'log_uniform', 
+                   'min': int(np.floor(np.log(1e-4))), 
+                   'max': int(np.ceil(np.log(1e-1)))},
             'batch_size': {'values': [2, 4, 8, 16]},
             'loss': {'values': ['mse']},
         }
     }
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-MIMIC-1105')
-    wandb.agent(sweep_id, function=search_objective, count=10)
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-MIMIC-1105-224')
+    wandb.agent(sweep_id, function=search_objective, count=20)
     wandb.finish()
 
 
@@ -262,7 +271,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss', type=str, default='mse', help='Loss function')
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
-    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105', help='Path for dataset')
+    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105-224', help='Path for dataset')
     parser.add_argument('--search', type=int, default=0, help='Hyperparameter search')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluate the model')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')
