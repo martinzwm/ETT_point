@@ -1,5 +1,4 @@
 from __future__ import print_function
-
 import argparse
 from copy import deepcopy
 import torch
@@ -8,9 +7,11 @@ import torch.nn.functional as F
 import utils
 import wandb
 import numpy as np
+import os
 
 from dataset import *
 from pipeline_utils import *
+from model import get_model
 
 
 def get_dataloader():
@@ -43,44 +44,6 @@ def get_dataloader():
         collate_fn=utils.collate_fn)
 
     return dataloader_train, dataloader_val, dataloader_test
-
-
-def get_model(model_num=1):
-    """
-    2 models to choose from:
-        - model 1: get rough location of carina from the full image
-        - model 2: get refined location of carina from cropped image based on model 1
-    """
-    model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
-    if arg.finetune==False:
-        # Freeze backbone layers
-        for param in model.parameters():
-            param.requires_grad = False
-
-    modules = [
-        *[module for _, module in model.backbone.items()],
-        nn.Conv2d(2048, 512, kernel_size=(3, 3), stride=(2, 2)),
-        nn.ReLU(),
-        nn.BatchNorm2d(512),
-        nn.Conv2d(512, 128, kernel_size=(3, 3), stride=(2, 2)),
-        nn.ReLU(),
-        nn.BatchNorm2d(128),
-        nn.Conv2d(128, 32, kernel_size=(3, 3), stride=(2, 2)),
-        nn.ReLU(),
-        nn.BatchNorm2d(32),
-        nn.Conv2d(32, 8, kernel_size=(3, 3), stride=(2, 2)),
-        nn.ReLU(),
-        nn.BatchNorm2d(8),
-        nn.Flatten(),
-    ]
-    if model_num == 1:
-        modules.append(nn.Linear(392, 2))
-    elif model_num == 2:
-        modules.append(nn.Linear(72, 2))
-    
-    model = nn.Sequential(*modules)
-    model.name = model_num
-    return model
 
 
 def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=None):
@@ -139,7 +102,8 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/model{}_lr={}_bs={}_loss={}.pt".format(
+                "ckpts/{}_model{}_lr={}_bs={}_loss={}.pt".format(
+                    arg.backbone,
                     arg.model_num,
                     round(optimizer.param_groups[0]['lr'], 5),
                     arg.batch_size,
@@ -149,7 +113,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         
         # Log to wandb
         if arg.logging:
-            dst = log_images(model, dataset_val, device, model_1)
+            dst = log_images(model, dataset_val, device, model_1, r=2)
             wandb.log({
                 "train/loss": train_loss, 
                 "val/loss": val_loss,
@@ -201,7 +165,12 @@ def pipeline(evaluate=False):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
     
-    model = get_model(model_num=arg.model_num)
+    if arg.backbone == "chexzero": # need to change the working directory to import chexzero
+        os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
+        os.chdir(os.path.join(os.getcwd(), ".."))
+    else:
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
@@ -210,7 +179,7 @@ def pipeline(evaluate=False):
     if arg.model_num == 2:
         if arg.model1_ckpt == None:
             raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
-        model_1 = get_model(model_num=1)
+        model_1 = get_model(backbone=arg.backbone, model_num=1)
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
         model_1.to(device)
 
@@ -228,7 +197,8 @@ def pipeline(evaluate=False):
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
     print("Testing on test set ...")
     model.load_state_dict(torch.load(
-        "ckpts/model{}_lr={}_bs={}_loss={}.pt".format(
+        "ckpts/{}_model{}_lr={}_bs={}_loss={}.pt".format(
+            arg.backbone,
             arg.model_num,
             round(optimizer.param_groups[0]['lr'], 5),
             arg.batch_size,
@@ -254,7 +224,7 @@ def search_objective():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, _ = get_dataloader()
     
-    model = get_model(model_num=arg.model_num)
+    model = get_model(backbone=arg.backbone, model_num=arg.model_num)
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
@@ -273,7 +243,7 @@ def hyperparameter_search():
         {
             'lr': {'distribution': 'log_uniform', 'min': np.log(1e-4), 'max': np.log(1e-2)},
             'batch_size': {'values': [2, 4, 8, 16]},
-            'loss': {'values': ['mse', 'piecewise']},
+            'loss': {'values': ['mse']},
         }
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-MIMIC-1105')
@@ -295,6 +265,7 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105', help='Path for dataset')
     parser.add_argument('--search', type=int, default=0, help='Hyperparameter search')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluate the model')
+    parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')
 
     arg = parser.parse_args()
     arg.logging = True if arg.logging == 1 else False

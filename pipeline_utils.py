@@ -8,7 +8,7 @@ from dataset import view_img
 from transforms import MU, STD
 
 
-def log_images(model, dataset, device, model_1=None):
+def log_images(model, dataset, device, model_1=None, r=10):
     # Randomly select 3 images from the validation set, and plot the predicted center
     # and the ground truth center.
     indices = np.random.choice(len(dataset), size=3, replace=False)
@@ -38,8 +38,8 @@ def log_images(model, dataset, device, model_1=None):
         image = (image * 255).astype(np.uint8)
         image = Image.fromarray(image)
         draw = ImageDraw.Draw(image)
-        draw.ellipse((predicted[0]-10, predicted[1]-10, predicted[0]+10, predicted[1]+10), fill='green')
-        draw.ellipse((gt[0]-10, gt[1]-10, gt[0]+10, gt[1]+10), fill='red')
+        draw.ellipse((predicted[0]-r, predicted[1]-r, predicted[0]+r, predicted[1]+r), fill='green')
+        draw.ellipse((gt[0]-r, gt[1]-r, gt[0]+r, gt[1]+r), fill='red')
         print(gt, predicted)
         images.append(image)
     

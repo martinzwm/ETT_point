@@ -49,14 +49,14 @@ def view_gt_bbox(
 def draw_single_bbox(image, bbox):
     labelled_img = ImageDraw.Draw(image)
     shapes = [bbox]
-    labelled_img.rectangle(shapes[0], outline="red", width = 10)
+    labelled_img.rectangle(shapes[0], outline="red", width = 1)
     return image
 
 
 def downsize(
     root="/home/ec2-user/data/MIMIC_ETT_annotations", 
     image_dir='PNGImages', target_dir='downsized'):
-    resized_dim = 1024
+    resized_dim = 224
     # load target.json
     f = open(os.path.join(root, 'annotations.json'))
     data = json.load(f)
@@ -76,7 +76,7 @@ def downsize(
 
         # resize
         image = image.resize((resized_dim, resized_dim))
-        image.save(os.path.join(root, "downsized", file_path))
+        image.save(os.path.join(root, target_dir, file_path))
 
     # downsize gt bbox
     for i, ann in enumerate(data['annotations']):
@@ -123,10 +123,10 @@ def get_stats(root="/home/ec2-user/data/MIMIC_ETT_annotations", image_dir='PNGIm
     
 
 if __name__ == "__main__":
-    # downsize(root="/home/ec2-user/data/MIMIC-981", image_dir='PNGImages', target_dir='downsized')
-    view_gt_bbox(
-        root="/home/ec2-user/data/MIMIC-981", 
-        annotation_file='annotations_downsized.json', 
-        image_dir='downsized', target_dir='bbox3046_downsized')
-    # get_stats(root="/home/ec2-user/data/MIMIC-981", image_dir='downsized')
-    
+    # downsize(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='PNGImage', target_dir='downsized_224')
+    # view_gt_bbox(
+    #     root="/home/ec2-user/data/MIMIC-1105-224", 
+    #     annotation_file='annotations_downsized.json', 
+    #     image_dir='downsized_224', target_dir='bbox_downsized_224'
+    #     )
+    get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_224')
