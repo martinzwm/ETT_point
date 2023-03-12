@@ -20,7 +20,7 @@ def get_chexzero(model_num=1, finetune=False):
     Backbone: ChexZero
     """
     model = cxrlearn.chexzero(
-            freeze_backbone=True, 
+            freeze_backbone=(finetune==False), 
             linear_layer_dim=512, 
             num_out=14, # this is dummy b/c we're not using the last layer
             device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
