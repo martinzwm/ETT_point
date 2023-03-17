@@ -64,18 +64,23 @@ def get_resnet(model_num=1, finetune=False):
         nn.Conv2d(512, 128, kernel_size=(3, 3), stride=(2, 2)),
         nn.ReLU(),
         nn.BatchNorm2d(128),
-        nn.Conv2d(128, 32, kernel_size=(3, 3), stride=(2, 2)),
-        nn.ReLU(),
-        nn.BatchNorm2d(32),
-        # nn.Conv2d(32, 8, kernel_size=(3, 3), stride=(2, 2)),
-        # nn.ReLU(),
-        # nn.BatchNorm2d(8),
-        nn.Flatten(),
     ]
     if model_num == 1:
-        modules.append(nn.Linear(128, 2))
+        modules.extend([
+            nn.Conv2d(128, 32, kernel_size=(3, 3), stride=(2, 2)),
+            nn.ReLU(),
+            nn.BatchNorm2d(32),
+            nn.Flatten(),
+            nn.Linear(128, 2)
+            ])
     elif model_num == 2:
-        modules.append(nn.Linear(72, 2))
+        modules.extend([
+            nn.Flatten(),
+            nn.Linear(512, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Linear(128, 2)
+            ])
     
     model = nn.Sequential(*modules)
     return model
