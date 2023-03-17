@@ -6,7 +6,7 @@ dataset = "MIMIC-100"
 if dataset == "MIMIC-100":
     MU, STD = 0.49271007, 0.23071574
 elif dataset == "MIMIC-1000":
-    MU, STD = 0.49714759, 0.21722301
+    MU, STD = 0.52561661, 0.20110909
 
 
 def _flip_coco_person_keypoints(kps, width):

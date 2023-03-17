@@ -1,6 +1,7 @@
 import json
 import os
 import numpy as np
+import cv2
 from PIL import Image, ImageDraw, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -105,6 +106,22 @@ def downsize(
         json.dump(data, outfile)
 
 
+def normalize(
+    root="/home/ec2-user/data/MIMIC-1105", 
+    image_dir='downsized', target_dir='downsized_norm'
+    ):
+    clip_limit = 3.0
+    tile_grid_size = (32, 32)
+
+    for file_path in os.listdir(os.path.join(root, image_dir)):
+        image_path = os.path.join(root, image_dir, file_path)
+        image = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
+        equalized_image = clahe.apply(gray_image)
+        cv2.imwrite(os.path.join(root, target_dir, file_path), equalized_image)
+
+
 def get_stats(root="/home/ec2-user/data/MIMIC_ETT_annotations", image_dir='PNGImages'):
     # find mean and std of images in folder
     mean = [0, 0, 0]
@@ -123,10 +140,11 @@ def get_stats(root="/home/ec2-user/data/MIMIC_ETT_annotations", image_dir='PNGIm
     
 
 if __name__ == "__main__":
-    # downsize(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='PNGImage', target_dir='downsized_224')
+    # downsize(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='PNGImages', target_dir='downsized_norm')
     # view_gt_bbox(
     #     root="/home/ec2-user/data/MIMIC-1105-224", 
     #     annotation_file='annotations_downsized.json', 
     #     image_dir='downsized_224', target_dir='bbox_downsized_224'
     #     )
-    get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_224')
+    # normalize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized_norm')
+    get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_norm')

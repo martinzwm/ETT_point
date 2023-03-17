@@ -223,7 +223,7 @@ def search_objective():
 
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    dataloader_train, dataloader_val, _ = get_dataloader()
+    dataloader_train, dataloader_val, _ = get_dataloader(image_dir='downsized_norm')
     
     if arg.backbone == "chexzero": # need to change the working directory to import chexzero
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
