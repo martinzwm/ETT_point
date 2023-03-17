@@ -1,4 +1,7 @@
 from __future__ import print_function
+import warnings
+warnings.filterwarnings("ignore")
+
 import argparse
 from copy import deepcopy
 import torch
@@ -165,12 +168,12 @@ def pipeline(evaluate=False):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
     
-    if arg.backbone == "chexzero": # need to change the working directory to import chexzero
+    if arg.backbone == "resnet50":
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
+    else: # need to change the working directory to import from cxrlearn
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
         model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
         os.chdir(os.path.join(os.getcwd(), ".."))
-    else:
-        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
