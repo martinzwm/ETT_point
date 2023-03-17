@@ -17,7 +17,7 @@ from model import get_model
 def get_dataloader():
     dataset_train = CXRDataset(
         root=arg.dataset_path, 
-        image_dir='downsized',
+        image_dir='downsized_norm',
         ann_file='annotations_downsized.json',
         transforms=get_transform(train=True)
         )
@@ -223,7 +223,7 @@ def search_objective():
 
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    dataloader_train, dataloader_val, _ = get_dataloader(image_dir='downsized_norm')
+    dataloader_train, dataloader_val, _ = get_dataloader()
     
     if arg.backbone == "chexzero": # need to change the working directory to import chexzero
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
