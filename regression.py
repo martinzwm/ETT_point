@@ -228,12 +228,12 @@ def search_objective():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, _ = get_dataloader()
     
-    if arg.backbone == "chexzero": # need to change the working directory to import chexzero
+    if arg.backbone == "resnet": # need to change the working directory to import chexzero
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
+    else:
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
         model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
         os.chdir(os.path.join(os.getcwd(), ".."))
-    else:
-        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
@@ -250,9 +250,9 @@ def hyperparameter_search():
         'metric': {'goal': 'minimize', 'name': 'loss'},
         'parameters': 
         {
-            'backbone': {'values': ['resnet', 'chexzero']},
+            'backbone': {'values': ['resnet', 'chexzero', "mococxr"]},
             'lr': {'distribution': 'log_uniform', 
-                   'min': int(np.floor(np.log(1e-4))), 
+                   'min': int(np.floor(np.log(1e-5))), 
                    'max': int(np.ceil(np.log(1e-1)))},
             'batch_size': {'values': [2, 4, 8, 16]},
             'loss': {'values': ['mse']},
