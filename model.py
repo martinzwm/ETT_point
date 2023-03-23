@@ -4,6 +4,7 @@ sys.path.append(os.path.join(os.getcwd(), 'cxrlearn'))
 
 import torch
 import torch.nn as nn
+import torchvision
 import cxrlearn.cxrlearn as cxrlearn
 
 
@@ -14,6 +15,10 @@ def get_model(backbone="resnet", model_num=1, finetune=False):
         model = get_chexzero(model_num, finetune)
     elif backbone == "mococxr":
         model = get_mococxr(model_num, finetune)
+    elif backbone == "refers":
+        model = get_refers(model_num, finetune)
+    elif backbone == "gloria":
+        model = get_gloria(model_num, finetune)
     return model
 
 
@@ -74,6 +79,62 @@ def get_mococxr(model_num=1, finetune=False):
     return model
 
 
+def get_refers(model_num=1, finetune=False):
+    """
+    Backbone: REFERS
+    """
+    model = cxrlearn.refers(
+        freeze_backbone=(finetune==False),
+        num_out=None,
+        device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+        )
+
+    modules = [
+        model,
+        nn.Linear(768, 128),
+        nn.ReLU(),
+        nn.BatchNorm1d(128),
+        nn.Linear(128, 32),
+        nn.ReLU(),
+        nn.BatchNorm1d(32),
+        nn.Linear(32, 8),
+        nn.ReLU(),
+        nn.BatchNorm1d(8),
+        nn.Flatten(),
+        nn.Linear(8, 2)
+    ]
+    model = nn.Sequential(*modules)
+    return model
+
+
+def get_gloria(model_num=1, finetune=False):
+    """
+    Backbone: GLORIA
+    """
+    model = cxrlearn.gloria(
+        model="resnet50",
+        freeze_backbone=(finetune==False),
+        num_ftrs=2048, # not sured
+        num_out=None,
+        device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+        )
+    backbone = list(model.children())[0]
+
+    modules = [
+        *list(backbone.children())[:-2],
+        nn.Conv2d(2048, 512, kernel_size=(3, 3), stride=(2, 2)),
+        nn.ReLU(),
+        nn.BatchNorm2d(512),
+        nn.Conv2d(512, 128, kernel_size=(3, 3), stride=(2, 2)),
+        nn.ReLU(),
+        nn.BatchNorm2d(128),
+        nn.Flatten(),
+        nn.Linear(128, 2)
+    ]
+    model = nn.Sequential(*modules)
+    return model
+
+
 def get_resnet(model_num=1, finetune=False):
     """
     Backbone: ResNet50
@@ -98,11 +159,8 @@ def get_resnet(model_num=1, finetune=False):
     ]
     if model_num == 1:
         modules.extend([
-            nn.Conv2d(128, 32, kernel_size=(3, 3), stride=(2, 2)),
-            nn.ReLU(),
-            nn.BatchNorm2d(32),
             nn.Flatten(),
-            nn.Linear(128, 2)
+            nn.Linear(32, 2)
             ])
     elif model_num == 2:
         modules.extend([

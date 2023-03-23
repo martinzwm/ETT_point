@@ -250,7 +250,7 @@ def hyperparameter_search():
         'metric': {'goal': 'minimize', 'name': 'loss'},
         'parameters': 
         {
-            'backbone': {'values': ['resnet', 'chexzero', "mococxr"]},
+            'backbone': {'values': ['resnet', 'chexzero', "mococxr", "refers", "gloria"]},
             'lr': {'distribution': 'log_uniform', 
                    'min': int(np.floor(np.log(1e-5))), 
                    'max': int(np.ceil(np.log(1e-1)))},
