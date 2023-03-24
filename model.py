@@ -19,6 +19,8 @@ def get_model(backbone="resnet", model_num=1, finetune=False):
         model = get_refers(model_num, finetune)
     elif backbone == "gloria":
         model = get_gloria(model_num, finetune)
+    elif backbone == "CNN":
+        model = get_CNN()
     return model
 
 
@@ -173,3 +175,63 @@ def get_resnet(model_num=1, finetune=False):
     
     model = nn.Sequential(*modules)
     return model
+
+
+def get_CNN():
+    """
+    Backbone: CNN recreated based on Kara et al. paper on cascaded CNN for ETT detection
+    """
+    model = nn.Sequential(
+        ResNetBlock(1, 48, 1, 2),
+        ResNetBlock(48, 56, 4, 2),
+        ResNetBlock(56, 64, 4, 2),
+        ResNetBlock(64, 80, 3, 2),
+        ResNetBlock(80, 96, 3, 2),
+        ResNetBlock(96, 112, 3, 2),
+        ResNetBlock(112, 128, 3, 2),
+        nn.Flatten(),
+        nn.Linear(128*2*2, 2),
+    )
+    print(model)
+    return model
+
+class ResNetBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, num_conv1_layers, stride):
+        super(ResNetBlock, self).__init__()
+        
+        self.num_conv1_layers = num_conv1_layers
+        self.conv1_layers = nn.ModuleList()
+        for i in range(num_conv1_layers):
+            if i == 0:
+                self.conv1_layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
+            else:
+                self.conv1_layers.append(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
+            self.conv1_layers.append(nn.BatchNorm2d(out_channels))
+            self.conv1_layers.append(nn.LeakyReLU(inplace=True))
+            
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.LeakyReLU(inplace=True)
+        
+        if in_channels != out_channels or stride != 1:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+        else:
+            self.shortcut = nn.Identity()
+            
+
+    def forward(self, x):
+        residual = x
+
+        for layer in self.conv1_layers:
+            x = layer(x)
+        out = self.conv2(x)
+        out = self.bn2(out)
+        
+        out += self.shortcut(residual)
+        out = self.relu(out)
+        
+        return out
+
