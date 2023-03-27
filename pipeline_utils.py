@@ -23,7 +23,7 @@ def log_images(model, dataset, device, model_1=None, object="carina", r=10):
             predicted = model_1(image)
             image, gt_box = crop_images(image, predicted, target['boxes'])
         predicted = model(image)
-        predicted = predicted.cpu().detach().numpy()[0]
+        predicted = predicted.cpu().detach().numpy()
         
         if object == "carina":
             gt_box = gt_box[0].unsqueeze(0)

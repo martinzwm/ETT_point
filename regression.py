@@ -80,7 +80,8 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/{}_model{}_lr={}_bs={}_loss={}.pt".format(
+                "ckpts/{}_{}_model{}_lr={}_bs={}_loss={}.pt".format(
+                    arg.object,
                     arg.backbone,
                     arg.model_num,
                     round(optimizer.param_groups[0]['lr'], 5),
@@ -222,7 +223,7 @@ def pipeline(evaluate=False):
 
 
 def search_objective():
-    wandb.init(project='ETT-MIMIC-1105-224')
+    wandb.init(project='ETT-debug')
     config = wandb.config
     arg.backbone = config['backbone']
     arg.lr = round(config['lr'], 5)
@@ -233,12 +234,12 @@ def search_objective():
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, _ = get_dataloader()
-    
-    if arg.backbone == "resnet": # need to change the working directory to import chexzero
-        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
-    else:
+
+    if arg.backbone == "resnet":
+        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
+    else: # need to change the working directory to import from cxrlearn
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
+        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
         os.chdir(os.path.join(os.getcwd(), ".."))
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
@@ -264,7 +265,7 @@ def hyperparameter_search():
             'loss': {'values': ['mse']},
         }
     }
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-MIMIC-1105-224')
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-debug')
     wandb.agent(sweep_id, function=search_objective, count=20)
     wandb.finish()
 
