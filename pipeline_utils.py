@@ -8,7 +8,7 @@ from dataset import view_img
 from transforms import MU, STD
 
 
-def log_images(model, dataset, device, model_1=None, r=10):
+def log_images(model, dataset, device, model_1=None, object="carina", r=10):
     # Randomly select 3 images from the validation set, and plot the predicted center
     # and the ground truth center.
     indices = np.random.choice(len(dataset), size=3, replace=False)
@@ -24,9 +24,14 @@ def log_images(model, dataset, device, model_1=None, r=10):
             image, gt_box = crop_images(image, predicted, target['boxes'])
         predicted = model(image)
         predicted = predicted.cpu().detach().numpy()[0]
-
-        gt_box = gt_box.squeeze(0).cpu().detach().numpy()
-        gt = [(gt_box[0] + gt_box[2]) / 2, (gt_box[1] + gt_box[3]) / 2]
+        
+        if object == "carina":
+            gt_box = gt_box[0].unsqueeze(0)
+        elif object == "both":
+            predicted = predicted.reshape(2, -1)
+        gt_box = gt_box.cpu().detach().numpy()
+        gt = np.array([(gt_box[:, 0] + gt_box[:, 2]) / 2, (gt_box[:, 1] + gt_box[:, 3]) / 2])
+        gt = gt.transpose()
 
         # Plot the image using PIL
         image = image.cpu().detach().numpy()[0]
@@ -37,9 +42,16 @@ def log_images(model, dataset, device, model_1=None, r=10):
         image = std * image + mean
         image = (image * 255).astype(np.uint8)
         image = Image.fromarray(image)
+
+        # Draw the predicted and ground truth center
         draw = ImageDraw.Draw(image)
-        draw.ellipse((predicted[0]-r, predicted[1]-r, predicted[0]+r, predicted[1]+r), fill='green')
-        draw.ellipse((gt[0]-r, gt[1]-r, gt[0]+r, gt[1]+r), fill='red')
+        for i in range(predicted.shape[0]):
+            if i == 0:
+                draw.ellipse((predicted[i][0]-r, predicted[i][1]-r, predicted[i][0]+r, predicted[i][1]+r), fill='green')
+            else:
+                draw.ellipse((predicted[i][0]-r, predicted[i][1]-r, predicted[i][0]+r, predicted[i][1]+r), fill='blue')
+        for i in range(gt.shape[0]):
+            draw.ellipse((gt[i][0]-r, gt[i][1]-r, gt[i][0]+r, gt[i][1]+r), fill='red')
         print(gt, predicted)
         images.append(image)
     

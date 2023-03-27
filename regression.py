@@ -59,45 +59,20 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         print("Training epoch: ", i+1, " / ", epoch, " ...")
         
         for images, targets in dataset_train:
-            # Load images
-            images = torch.stack([image for image in images], dim=0)
-            images = images.to(device)
-
-            # Load gt
-            bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
+            predicted, centers = forward(images, targets, model, device, model_1)
             
-            # Predict
-            if model_1 is not None: # predict rough location of carina using model 1
-                predicted = model_1(images)
-                images, bboxes = crop_images(images, predicted, bboxes)
-            predicted = model(images)
-
-            # gt center
-            centers = torch.stack(
-                [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
-                dim=1
-            )
-            centers = centers.to(device)
-
             # Loss
             if arg.loss == "mse":
                 loss = F.mse_loss(predicted, centers)
-            elif arg.loss == "piecewise":
-                # apply l2 loss if prediction is outside of bbox
-                masks = [out_bbox(predicted[i], bboxes[i]) for i in range(predicted.size(0))]
-                masks = torch.tensor(masks).to(device)
-                loss = [torch.sum((predicted[i] - centers[i]) ** 2)  for i in range(predicted.size(0))]
-                loss = torch.stack(loss, dim=0)
-                loss = torch.sum(loss * masks) / (predicted.size(0) * predicted.size(1))
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
         # Progress report
-        print("Training set", end=" ")
+        print("Training set")
         train_loss = test(model, dataset_train, device, model_1)
-        print("Validation set", end=" ")
+        print("Validation set")
         val_loss = test(model, dataset_val, device, model_1)
 
         # Save best model so far
@@ -116,7 +91,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         
         # Log to wandb
         if arg.logging:
-            dst = log_images(model, dataset_val, device, model_1, r=2)
+            dst = log_images(model, dataset_val, device, model_1, object=arg.object, r=2)
             wandb.log({
                 "train/loss": train_loss, 
                 "val/loss": val_loss,
@@ -129,38 +104,62 @@ def test(model, dataset_test, device, model_1=None):
     model.eval()
     if model_1 is not None:
         model_1.eval()
-    dist = []
+    carina_losses, ett_losses = [], []
 
     for images, targets in dataset_test:
-        # Load image
-        images = torch.stack([image for image in images], dim=0)
-        images = images.to(device)
-
-        # Load gt box
-        bboxes = torch.stack([target['boxes'].squeeze(0) for target in targets], dim=0)
-
-        # Predict
-        if model_1 is not None: # predict rough location of carina using model 1
-            predicted = model_1(images)
-            images, bboxes = crop_images(images, predicted, bboxes)
-        predicted = model(images) # predict refined location of carina using model 2
-        
-        # gt center
-        centers = torch.stack(
-            [(bboxes[:, 0] + bboxes[:, 2]) / 2, (bboxes[:, 1] + bboxes[:, 3]) / 2],
-            dim=1
-        )
-        centers = centers.to(device)
-
+        predicted, centers = forward(images, targets, model, device, model_1)
         with torch.no_grad():
             # L2 loss
-            loss = F.mse_loss(predicted, centers)
-            loss = torch.sqrt(loss)
-            dist.append(loss.item())
+            if arg.object == "carina":
+                carina_loss = F.mse_loss(predicted, centers)
+                carina_losses.append(torch.sqrt(carina_loss).item())
+            elif arg.object == "both":
+                carina_loss = F.mse_loss(predicted[:, :2], centers[:, :2])
+                ett_loss = F.mse_loss(predicted[:, 2:], centers[:, 2:])
+                carina_losses.append(torch.sqrt(carina_loss).item())
+                ett_losses.append(torch.sqrt(ett_loss).item())
     
-    avg_loss = sum(dist) / len(dist)
-    print("Average L2 loss: ", avg_loss)
-    return avg_loss
+    carina_avg_loss = round( sum(carina_losses) / len(carina_losses), 1)
+    print("\t carina L2 loss: ", carina_avg_loss)
+    if arg.object == "both":
+        ett_avg_loss = round( sum(ett_losses) / len(ett_losses), 1)
+        print("\t ETT L2 loss: ", ett_avg_loss)
+        avg_loss = round( (carina_avg_loss + ett_avg_loss) / 2, 1)
+        print("\t L2 loss: ", avg_loss)
+        return avg_loss
+    return carina_avg_loss
+
+
+def forward(images, targets, model, device, model_1=None):
+    # Load image
+    images = torch.stack([image for image in images], dim=0)
+    images = images.to(device)
+
+    # Load gt box
+    bboxes = torch.stack([target['boxes'] for target in targets], dim=0)
+
+    # Predict
+    if model_1 is not None: # predict rough location of carina using model 1
+        predicted = model_1(images)
+        images, bboxes = crop_images(images, predicted, bboxes)
+    predicted = model(images) # predict refined location of carina using model 2
+    
+    # gt center
+    centers = torch.stack(
+        [(bboxes[:, :, 0] + bboxes[:, :, 2]) / 2, (bboxes[:, :, 1] + bboxes[:, :, 3]) / 2],
+        dim=1
+    )
+    centers = centers.permute(0, 2, 1)
+    
+    if arg.object == "carina":
+        centers = centers[:, 0, :]
+    elif arg.object == "both":
+        centers = centers.reshape(centers.size(0), -1)
+    else:
+        raise ValueError("Invalid object type, needs to be either carina or both")
+    centers = centers.to(device)
+
+    return predicted, centers
 
 
 def pipeline(evaluate=False):
@@ -168,11 +167,11 @@ def pipeline(evaluate=False):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
     
-    if arg.backbone == "resnet50":
-        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
+    if arg.backbone == "resnet":
+        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
     else: # need to change the working directory to import from cxrlearn
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
+        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
         os.chdir(os.path.join(os.getcwd(), ".."))
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
@@ -194,7 +193,8 @@ def pipeline(evaluate=False):
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
     if arg.logging:
-        wandb.init(project='ETT-MIMIC-1105-224')
+        # wandb.init(project='ETT-MIMIC-1105-224')
+        wandb.init(project='ETT-debug')
         wandb.config = {}
 
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
@@ -278,6 +278,7 @@ if __name__ == "__main__":
     parser.add_argument('--search', type=int, default=0, help='Hyperparameter search')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluate the model')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')
+    parser.add_argument('--object', type=str, default='carina', help='Detect carina or both carina and ETT')
 
     arg = parser.parse_args()
     arg.logging = True if arg.logging == 1 else False

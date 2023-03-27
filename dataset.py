@@ -18,7 +18,7 @@ def get_transform(train):
         )) # normalize
     if train:
         transforms.append(T.RandomHorizontalFlip(0.5))
-        # transforms.append(T.RandomRotate(10))
+        # transforms.append(T.RandomRotate(5))
         transforms.append(T.RandomTranslate(0.1))
     return T.Compose(transforms)
 
@@ -71,25 +71,22 @@ class CXRDataset(torch.utils.data.Dataset):
         ann_ids = self.id_to_ann[self.img_to_id[self.imgs[idx]]]
         num_objs = len(ann_ids)
 
-        boxes, labels = [], []
+        boxes, labels = [[0,0,0,0], [0,0,0,0]], []
         for i in range(num_objs):
             ann = self.json['annotations'][ann_ids[i]]
             # label
             lab = ann['category_id']
-            if lab != 3046: # only consider carina for now, TODO: update to include ETT as well
-                continue
-            labels.append(1)
-            # bbox
-            xmin = ann['bbox'][0]
-            xmax = ann['bbox'][0] + ann['bbox'][2]
-            ymin = ann['bbox'][1]
-            ymax = ann['bbox'][1] + ann['bbox'][3]
-            boxes.append([xmin, ymin, xmax, ymax])
-            break
+            if lab == 3046 or lab == 3047: # only consider carina and ETT
+                labels.append(0) # dummy label
+                # bbox
+                xmin = ann['bbox'][0]
+                xmax = ann['bbox'][0] + ann['bbox'][2]
+                ymin = ann['bbox'][1]
+                ymax = ann['bbox'][1] + ann['bbox'][3]
+                boxes[lab-3046] = [xmin, ymin, xmax, ymax]
+                if lab == 3046:
+                    break
 
-        # if len(boxes) == 0:
-        #     boxes = [[0, 0, 0, 0]] # temp fix for pictures without ETT
-        #     labels = [1]
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
         labels = torch.as_tensor(labels, dtype=torch.int64)
         image_id = torch.tensor([idx])
@@ -128,7 +125,7 @@ def view_img(image, bbox):
 
 if __name__ == "__main__":
     dataset = CXRDataset(
-            root='/home/ec2-user/data/MIMIC_ETT_annotations', 
+            root='/home/ec2-user/data/MIMIC-1105-224', 
             image_dir='downsized',
             ann_file='annotations_downsized.json',
             transforms=get_transform(train=True),

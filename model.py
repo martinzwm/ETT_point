@@ -8,17 +8,17 @@ import torchvision
 import cxrlearn.cxrlearn as cxrlearn
 
 
-def get_model(backbone="resnet", model_num=1, finetune=False):
+def get_model(backbone="resnet", object="carina", model_num=1, finetune=False):
     if backbone == "resnet":
-        model = get_resnet(model_num, finetune)
+        model = get_resnet(object, model_num=model_num, finetune=finetune)
     elif backbone == "chexzero":
-        model = get_chexzero(model_num, finetune)
+        model = get_chexzero(model_num=model_num, finetune=finetune)
     elif backbone == "mococxr":
-        model = get_mococxr(model_num, finetune)
+        model = get_mococxr(model_num=model_num, finetune=finetune)
     elif backbone == "refers":
-        model = get_refers(model_num, finetune)
+        model = get_refers(model_num=model_num, finetune=finetune)
     elif backbone == "gloria":
-        model = get_gloria(model_num, finetune)
+        model = get_gloria(model_num=model_num, finetune=finetune)
     elif backbone == "CNN":
         model = get_CNN()
     return model
@@ -137,7 +137,7 @@ def get_gloria(model_num=1, finetune=False):
     return model
 
 
-def get_resnet(model_num=1, finetune=False):
+def get_resnet(object="carina", model_num=1, finetune=False):
     """
     Backbone: ResNet50
     2 models to choose from:
@@ -161,8 +161,11 @@ def get_resnet(model_num=1, finetune=False):
     ]
     if model_num == 1:
         modules.extend([
+            nn.Conv2d(128, 32, kernel_size=(3, 3), stride=(2, 2)),
+            nn.ReLU(),
+            nn.BatchNorm2d(32),
             nn.Flatten(),
-            nn.Linear(32, 2)
+            nn.Linear(128, 2) if object=="carina" else nn.Linear(128, 4)
             ])
     elif model_num == 2:
         modules.extend([

@@ -37,13 +37,13 @@ def view_gt_bbox(
         bbox = None
         for idx in ann_idx:
             ann = data['annotations'][idx]
-            if ann["category_id"] == 3046:
+            if ann["category_id"] == 3046 or ann["category_id"] == 3047:
                 xmin, ymin, w, h = ann["bbox"]
                 xmax = xmin + w
                 ymax = ymin + h
                 bbox = [xmin, ymin, xmax, ymax]
+                image = draw_single_bbox(image, bbox)
 
-        image = draw_single_bbox(image, bbox)
         image.save(os.path.join(root, target_dir, file_path))
 
 
@@ -140,11 +140,11 @@ def get_stats(root="/home/ec2-user/data/MIMIC_ETT_annotations", image_dir='PNGIm
     
 
 if __name__ == "__main__":
-    # downsize(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='PNGImages', target_dir='downsized_norm')
-    # view_gt_bbox(
-    #     root="/home/ec2-user/data/MIMIC-1105-224", 
-    #     annotation_file='annotations_downsized.json', 
-    #     image_dir='downsized_224', target_dir='bbox_downsized_224'
-    #     )
+    # downsize(root="/home/ec2-user/data/MIMIC-1105", image_dir='PNGImages', target_dir='downsized_norm')
+    view_gt_bbox(
+        root="/home/ec2-user/data/MIMIC-1105-224", 
+        annotation_file='annotations_downsized.json', 
+        image_dir='downsized', target_dir='bbox_downsized'
+        )
     # normalize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized_norm')
-    get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_norm')
+    # get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_norm')
