@@ -138,6 +138,12 @@ def forward(images, targets, model, device, model_1=None):
     # Load gt box
     bboxes = torch.stack([target['boxes'] for target in targets], dim=0)
 
+    # Only keep the images that have ETT
+    to_remove = [i for i in range(len(targets)) if targets[i]['labels'][1] == 0]
+    for i in to_remove:
+        images = torch.cat((images[:i], images[i+1:]), dim=0)
+        bboxes = torch.cat((bboxes[:i], bboxes[i+1:]), dim=0)
+
     # Predict
     if model_1 is not None: # predict rough location of carina using model 1
         predicted = model_1(images)

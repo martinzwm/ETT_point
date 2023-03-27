@@ -71,21 +71,20 @@ class CXRDataset(torch.utils.data.Dataset):
         ann_ids = self.id_to_ann[self.img_to_id[self.imgs[idx]]]
         num_objs = len(ann_ids)
 
-        boxes, labels = [[0,0,0,0], [0,0,0,0]], []
+        boxes, labels = [[0,0,0,0], [0,0,0,0]], [0, 0]
         for i in range(num_objs):
             ann = self.json['annotations'][ann_ids[i]]
             # label
             lab = ann['category_id']
             if lab == 3046 or lab == 3047: # only consider carina and ETT
-                labels.append(0) # dummy label
+                labels[lab-3046] = 1 # flag
                 # bbox
                 xmin = ann['bbox'][0]
                 xmax = ann['bbox'][0] + ann['bbox'][2]
                 ymin = ann['bbox'][1]
                 ymax = ann['bbox'][1] + ann['bbox'][3]
                 boxes[lab-3046] = [xmin, ymin, xmax, ymax]
-                if lab == 3046:
-                    break
+
 
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
         labels = torch.as_tensor(labels, dtype=torch.int64)
