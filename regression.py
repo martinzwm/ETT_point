@@ -11,6 +11,7 @@ import utils
 import wandb
 import numpy as np
 import os
+import pandas as pd
 
 from dataset import *
 from pipeline_utils import *
@@ -33,7 +34,7 @@ def get_dataloader():
     indices = torch.randperm(N).tolist()
     dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
     dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
-    dataset_test = torch.utils.data.Subset(dataset_test, indices[val_size+test_size:])
+    dataset_test = torch.utils.data.Subset(dataset_test, indices[(N-test_size):])
 
     # define training and validation data loaders
     dataloader_train = torch.utils.data.DataLoader(
@@ -131,6 +132,22 @@ def test(model, dataset_test, device, model_1=None):
     return carina_avg_loss
 
 
+def classify_normal(model, dataset_test, device):
+    model.eval()
+    dists, dists_gt = [], []
+    counter = 0
+    for images, targets in dataset_test:
+        predicted, centers = forward(images, targets, model, device)
+        with torch.no_grad():
+            # predicted distance between carina and ETT
+            dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
+            dists.extend(dist.cpu().tolist())
+            # actual distance between carina and ETT
+            dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
+            dists_gt.extend(dist_gt.cpu().tolist())
+    return dists, dists_gt
+
+
 def forward(images, targets, model, device, model_1=None):
     # Load image
     images = torch.stack([image for image in images], dim=0)
@@ -192,10 +209,18 @@ def pipeline(evaluate=False):
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
         model_1.to(device)
 
-    if evaluate:
+    if evaluate == 1:
         print("Testing on test set ...")
         test_loss = test(model, dataloader_test, device, model_1)
         return
+    elif evaluate == 2:
+        print("Testing on test set ...")
+        dists, dists_gt = classify_normal(model, dataloader_test, device)
+        # save to csv
+        df = pd.DataFrame({"dists": dists, "dists_gt": dists_gt})
+        df.to_csv("normal_vs_abnormal.csv")
+        return
+        
 
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
@@ -283,7 +308,7 @@ if __name__ == "__main__":
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
     parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105-224', help='Path for dataset')
     parser.add_argument('--search', type=int, default=0, help='Hyperparameter search')
-    parser.add_argument('--evaluate', type=int, default=0, help='Evaluate the model')
+    parser.add_argument('--evaluate', type=int, default=0, help='Evaluation mode: 0: train and test, 1: test, 2: classify normal vs abnormal')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')
     parser.add_argument('--object', type=str, default='carina', help='Detect carina or both carina and ETT')
 
@@ -291,7 +316,6 @@ if __name__ == "__main__":
     arg.logging = True if arg.logging == 1 else False
     arg.finetune = True if arg.finetune == 1 else False
     arg.search = True if arg.search == 1 else False
-    arg.evaluate = True if arg.evaluate == 1 else False
     
     if arg.search:
         hyperparameter_search()
