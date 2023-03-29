@@ -16,13 +16,15 @@ def log_images(model, dataset, device, model_1=None, object="carina", r=10):
     
     for i in indices:
         image, target = dataset.dataset[i]
-        image.unsqueeze_(0)
-        image = image.to(device)
+        while target["labels"][1] != 1:
+            i = np.random.choice(len(dataset), size=1, replace=False)[0]
+            image, target = dataset.dataset[i]
+        image = image.unsqueeze_(0).to(device)
         gt_box = target['boxes']
         if model_1 is not None:
             predicted = model_1(image)
-            image, gt_box = crop_images(image, predicted, target['boxes'])
-        predicted = model(image)
+            image, gt_box = crop_image(image.squeeze_(0), predicted.squeeze_(0), gt_box)
+        predicted = model(image.unsqueeze_(0))
         predicted = predicted.cpu().detach().numpy()
         
         if object == "carina":
@@ -89,7 +91,7 @@ def crop_images(images, points, bboxs):
 def crop_image(image, point, bbox):
     # Crop the image around the point
     C, H, W = image.size()
-    H_new, W_new = int(H * 0.5), int(W * 0.5)
+    H_new, W_new = int(H * 0.5), int(W * 0.25)
     x_min, x_max = max(0, int(point[0] - W_new*0.5)), min(W, int(point[0] + W_new*0.5))
     y_min, y_max = max(0, int(point[1] - H_new*0.75)), min(H, int(point[1] + H_new*0.25))
     image = image[:, y_min:y_max, x_min:x_max]
@@ -110,7 +112,8 @@ def crop_image(image, point, bbox):
         image = torch.cat((pad, image), dim=2)
 
     # Transform the bbox according to the crop
-    bbox = deepcopy(bbox)
-    bbox[0], bbox[2] = bbox[0] - x_min, bbox[2] - x_min
-    bbox[1], bbox[3] = bbox[1] - y_min, bbox[3] - y_min
+    for box in bbox:
+        box[0], box[2] = box[0] - x_min, box[2] - x_min
+        box[1], box[3] = box[1] - y_min, box[3] - y_min
+    
     return image, bbox

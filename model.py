@@ -12,13 +12,13 @@ def get_model(backbone="resnet", object="carina", model_num=1, finetune=False):
     if backbone == "resnet":
         model = get_resnet(object, model_num=model_num, finetune=finetune)
     elif backbone == "chexzero":
-        model = get_chexzero(model_num=model_num, finetune=finetune)
+        model = get_chexzero(object, model_num=model_num, finetune=finetune)
     elif backbone == "mococxr":
-        model = get_mococxr(model_num=model_num, finetune=finetune)
+        model = get_mococxr(object, model_num=model_num, finetune=finetune)
     elif backbone == "refers":
-        model = get_refers(model_num=model_num, finetune=finetune)
+        model = get_refers(object, model_num=model_num, finetune=finetune)
     elif backbone == "gloria":
-        model = get_gloria(model_num=model_num, finetune=finetune)
+        model = get_gloria(object, model_num=model_num, finetune=finetune)
     elif backbone == "CNN":
         model = get_CNN()
     return model
@@ -109,14 +109,14 @@ def get_refers(model_num=1, finetune=False):
     return model
 
 
-def get_gloria(model_num=1, finetune=False):
+def get_gloria(object="carina", model_num=1, finetune=False):
     """
     Backbone: GLORIA
     """
     model = cxrlearn.gloria(
         model="resnet50",
         freeze_backbone=(finetune==False),
-        num_ftrs=2048, # not sured
+        num_ftrs=2048, # not used
         num_out=None,
         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
         )
@@ -124,6 +124,10 @@ def get_gloria(model_num=1, finetune=False):
 
     modules = [
         *list(backbone.children())[:-2],
+    ]
+
+    if model_num == 1:
+        modules.extend([
         nn.Conv2d(2048, 512, kernel_size=(3, 3), stride=(2, 2)),
         nn.ReLU(),
         nn.BatchNorm2d(512),
@@ -131,8 +135,23 @@ def get_gloria(model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(128),
         nn.Flatten(),
-        nn.Linear(128, 2)
-    ]
+        nn.Linear(128, 2) if object=="carina" else nn.Linear(128, 4)
+        ])
+    elif model_num == 2:
+        modules.extend([
+        nn.Conv2d(2048, 512, kernel_size=(2, 2), stride=(1, 1), padding="same"),
+        nn.ReLU(),
+        nn.BatchNorm2d(512),
+        nn.Conv2d(512, 128, kernel_size=(2, 2), stride=(1, 1), padding="same"),
+        nn.ReLU(),
+        nn.BatchNorm2d(128),
+        nn.Conv2d(128, 32, kernel_size=(2, 2), stride=(1, 1), padding="same"),
+        nn.ReLU(),
+        nn.BatchNorm2d(32),
+        nn.Flatten(),
+        nn.Linear(32*4*2, 2) if object=="carina" else nn.Linear(32*4*2, 4)
+        ])
+
     model = nn.Sequential(*modules)
     return model
 

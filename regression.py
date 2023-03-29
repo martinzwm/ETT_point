@@ -108,6 +108,10 @@ def test(model, dataset_test, device, model_1=None):
         model_1.eval()
     carina_losses, ett_losses = [], []
 
+    # dst = log_images(model, dataset_test, device, model_1, object=arg.object, r=2)
+    # dst.save("test.png")
+    # raise NameError()
+
     for images, targets in dataset_test:
         predicted, centers = forward(images, targets, model, device, model_1)
         with torch.no_grad():
@@ -135,7 +139,6 @@ def test(model, dataset_test, device, model_1=None):
 def classify_normal(model, dataset_test, device):
     model.eval()
     dists, dists_gt = [], []
-    counter = 0
     for images, targets in dataset_test:
         predicted, centers = forward(images, targets, model, device)
         with torch.no_grad():
@@ -205,7 +208,9 @@ def pipeline(evaluate=False):
     if arg.model_num == 2:
         if arg.model1_ckpt == None:
             raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
-        model_1 = get_model(backbone=arg.backbone, model_num=1)
+        os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
+        model_1 = get_model(backbone=arg.backbone, object=arg.object, model_num=1)
+        os.chdir(os.path.join(os.getcwd(), ".."))
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
         model_1.to(device)
 
@@ -232,7 +237,8 @@ def pipeline(evaluate=False):
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
     print("Testing on test set ...")
     model.load_state_dict(torch.load(
-        "ckpts/{}_model{}_lr={}_bs={}_loss={}.pt".format(
+        "ckpts/{}_{}_model{}_lr={}_bs={}_loss={}.pt".format(
+            arg.object,
             arg.backbone,
             arg.model_num,
             round(optimizer.param_groups[0]['lr'], 5),
@@ -282,10 +288,11 @@ def hyperparameter_search():
         'metric': {'goal': 'minimize', 'name': 'loss'},
         'parameters': 
         {
-            'backbone': {'values': ['resnet', 'chexzero', "mococxr", "refers", "gloria"]},
+            # 'backbone': {'values': ['resnet', 'chexzero', "mococxr", "refers", "gloria"]},
+            'backbone': {'values': ["gloria"]},
             'lr': {'distribution': 'log_uniform', 
                    'min': int(np.floor(np.log(1e-5))), 
-                   'max': int(np.ceil(np.log(1e-1)))},
+                   'max': int(np.ceil(np.log(1e-2)))},
             'batch_size': {'values': [2, 4, 8, 16]},
             'loss': {'values': ['mse']},
         }
@@ -316,7 +323,7 @@ if __name__ == "__main__":
     arg.logging = True if arg.logging == 1 else False
     arg.finetune = True if arg.finetune == 1 else False
     arg.search = True if arg.search == 1 else False
-    
+
     if arg.search:
         hyperparameter_search()
     else:
