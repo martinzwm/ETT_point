@@ -61,6 +61,8 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         
         for images, targets in dataset_train:
             predicted, centers = forward(images, targets, model, device, model_1)
+            if predicted is None:
+                continue
             
             # Loss
             if arg.loss == "mse":
@@ -108,12 +110,10 @@ def test(model, dataset_test, device, model_1=None):
         model_1.eval()
     carina_losses, ett_losses = [], []
 
-    # dst = log_images(model, dataset_test, device, model_1, object=arg.object, r=2)
-    # dst.save("test.png")
-    # raise NameError()
-
     for images, targets in dataset_test:
         predicted, centers = forward(images, targets, model, device, model_1)
+        if predicted is None:
+                continue
         with torch.no_grad():
             # L2 loss
             if arg.object == "carina":
@@ -124,7 +124,7 @@ def test(model, dataset_test, device, model_1=None):
                 ett_loss = F.mse_loss(predicted[:, 2:], centers[:, 2:])
                 carina_losses.append(torch.sqrt(carina_loss).item())
                 ett_losses.append(torch.sqrt(ett_loss).item())
-    
+                
     carina_avg_loss = round( sum(carina_losses) / len(carina_losses), 1)
     print("\t carina L2 loss: ", carina_avg_loss)
     if arg.object == "both":
@@ -161,6 +161,9 @@ def forward(images, targets, model, device, model_1=None):
 
     # Only keep the images that have ETT
     to_remove = [i for i in range(len(targets)) if targets[i]['labels'][1] == 0]
+    if len(to_remove) == len(targets):
+        return None, None
+    
     for i in to_remove:
         images = torch.cat((images[:i], images[i+1:]), dim=0)
         bboxes = torch.cat((bboxes[:i], bboxes[i+1:]), dim=0)
@@ -276,9 +279,19 @@ def search_objective():
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
 
+    model_1 = None
+    if arg.model_num == 2:
+        if arg.model1_ckpt == None:
+            raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
+        os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
+        model_1 = get_model(backbone=arg.backbone, object=arg.object, model_num=1)
+        os.chdir(os.path.join(os.getcwd(), ".."))
+        model_1.load_state_dict(torch.load(arg.model1_ckpt))
+        model_1.to(device)
+
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
-    val_loss = train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1=None)
+    val_loss = train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1=model_1)
     wandb.log({"loss": val_loss})
 
 
@@ -292,7 +305,7 @@ def hyperparameter_search():
             'backbone': {'values': ["gloria"]},
             'lr': {'distribution': 'log_uniform', 
                    'min': int(np.floor(np.log(1e-5))), 
-                   'max': int(np.ceil(np.log(1e-2)))},
+                   'max': int(np.ceil(np.log(1e-3)))},
             'batch_size': {'values': [2, 4, 8, 16]},
             'loss': {'values': ['mse']},
         }

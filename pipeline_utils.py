@@ -111,6 +111,10 @@ def crop_image(image, point, bbox):
         pad = torch.zeros(C, image.size()[1], W_new - image.size()[2]).to(device) - MU/STD
         image = torch.cat((pad, image), dim=2)
 
+    if image.size(1) != H_new or image.size(2) != W_new:
+        print("WARNING: Image size is not correct")
+        image = image[:, :H_new, :W_new]
+
     # Transform the bbox according to the crop
     for box in bbox:
         box[0], box[2] = box[0] - x_min, box[2] - x_min
