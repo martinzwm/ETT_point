@@ -136,11 +136,11 @@ def test(model, dataset_test, device, model_1=None):
     return carina_avg_loss
 
 
-def classify_normal(model, dataset_test, device):
+def classify_normal(model, dataset_test, device, model_1=None):
     model.eval()
     dists, dists_gt = [], []
     for images, targets in dataset_test:
-        predicted, centers = forward(images, targets, model, device)
+        predicted, centers = forward(images, targets, model, device, model_1)
         with torch.no_grad():
             # predicted distance between carina and ETT
             dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
@@ -223,7 +223,7 @@ def pipeline(evaluate=False):
         return
     elif evaluate == 2:
         print("Testing on test set ...")
-        dists, dists_gt = classify_normal(model, dataloader_test, device)
+        dists, dists_gt = classify_normal(model, dataloader_test, device, model_1)
         # save to csv
         df = pd.DataFrame({"dists": dists, "dists_gt": dists_gt})
         df.to_csv("normal_vs_abnormal.csv")
