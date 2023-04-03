@@ -77,6 +77,8 @@ class CXRDataset(torch.utils.data.Dataset):
             # label
             lab = ann['category_id']
             if lab == 3046 or lab == 3047: # only consider carina and ETT
+                if labels[lab-3046] == 1 and ann['assignee'] != 'reviewer1@vinbrain.net': # reviewer 1 is the expert
+                    continue
                 labels[lab-3046] = 1 # flag
                 # bbox
                 xmin = ann['bbox'][0]
