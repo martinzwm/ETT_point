@@ -65,8 +65,14 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
                 continue
             
             # Loss
-            if arg.loss == "mse":
-                loss = F.mse_loss(predicted, centers)
+            loss = F.mse_loss(predicted[:, :4], centers)
+            if arg.loss == "distance":
+                # predicted distance between carina and ETT
+                # dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
+                dist = predicted[:, 4]
+                # actual distance between carina and ETT
+                dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
+                loss += F.mse_loss(dist, dist_gt)
 
             optimizer.zero_grad()
             loss.backward()
@@ -108,7 +114,7 @@ def test(model, dataset_test, device, model_1=None):
     model.eval()
     if model_1 is not None:
         model_1.eval()
-    carina_losses, ett_losses = [], []
+    carina_losses, ett_losses, dist_losses = [], [], []
 
     for images, targets in dataset_test:
         predicted, centers = forward(images, targets, model, device, model_1)
@@ -121,34 +127,51 @@ def test(model, dataset_test, device, model_1=None):
                 carina_losses.append(torch.sqrt(carina_loss).item())
             elif arg.object == "both":
                 carina_loss = F.mse_loss(predicted[:, :2], centers[:, :2])
-                ett_loss = F.mse_loss(predicted[:, 2:], centers[:, 2:])
+                ett_loss = F.mse_loss(predicted[:, 2:4], centers[:, 2:4])
                 carina_losses.append(torch.sqrt(carina_loss).item())
                 ett_losses.append(torch.sqrt(ett_loss).item())
-                
+
+            if arg.loss == "distance":
+                # predicted distance between carina and ETT
+                # dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
+                dist = predicted[:, 4]
+                # actual distance between carina and ETT
+                dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:4])**2, dim=1))
+                loss = F.mse_loss(dist, dist_gt)
+                dist_losses.append(torch.sqrt(loss).item())
+            
     carina_avg_loss = round( sum(carina_losses) / len(carina_losses), 1)
     print("\t carina L2 loss: ", carina_avg_loss)
+    total_loss = carina_avg_loss
     if arg.object == "both":
         ett_avg_loss = round( sum(ett_losses) / len(ett_losses), 1)
         print("\t ETT L2 loss: ", ett_avg_loss)
-        avg_loss = round( (carina_avg_loss + ett_avg_loss) / 2, 1)
-        print("\t L2 loss: ", avg_loss)
-        return avg_loss
-    return carina_avg_loss
+        total_loss += ett_avg_loss
+        # print("\t Total detection loss: ", total_loss)
+    
+    if arg.loss == "distance":
+        dist_avg_loss = round( sum(dist_losses) / len(dist_losses), 1)
+        print("\t dist L2 loss: ", dist_avg_loss)
+        total_loss += dist_avg_loss
+
+    return total_loss
 
 
 def classify_normal(model, dataset_test, device, model_1=None):
     model.eval()
-    dists, dists_gt = [], []
+    dists, dists_gt, dists_model = [], [], []
     for images, targets in dataset_test:
         predicted, centers = forward(images, targets, model, device, model_1)
         with torch.no_grad():
             # predicted distance between carina and ETT
-            dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
+            dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:4])**2, dim=1))
             dists.extend(dist.cpu().tolist())
+            # distance directly output by model
+            dists_model.extend(predicted[:, 4].cpu().tolist())
             # actual distance between carina and ETT
             dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
             dists_gt.extend(dist_gt.cpu().tolist())
-    return dists, dists_gt
+    return dists, dists_gt, dists_model
 
 
 def forward(images, targets, model, device, model_1=None):
@@ -223,9 +246,9 @@ def pipeline(evaluate=False):
         return
     elif evaluate == 2:
         print("Testing on test set ...")
-        dists, dists_gt = classify_normal(model, dataloader_test, device, model_1)
+        dists, dists_gt, dists_model = classify_normal(model, dataloader_test, device, model_1)
         # save to csv
-        df = pd.DataFrame({"dists": dists, "dists_gt": dists_gt})
+        df = pd.DataFrame({"dists": dists, "dists_gt": dists_gt, "dists_model": dists_model})
         df.to_csv("normal_vs_abnormal.csv")
         return
         
@@ -307,11 +330,11 @@ def hyperparameter_search():
                    'min': int(np.floor(np.log(1e-5))), 
                    'max': int(np.ceil(np.log(1e-3)))},
             'batch_size': {'values': [2, 4, 8, 16]},
-            'loss': {'values': ['mse']},
+            'loss': {'values': ['distance']},
         }
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-debug')
-    wandb.agent(sweep_id, function=search_objective, count=20)
+    wandb.agent(sweep_id, function=search_objective, count=10)
     wandb.finish()
 
 

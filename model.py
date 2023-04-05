@@ -135,7 +135,7 @@ def get_gloria(object="carina", model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(128),
         nn.Flatten(),
-        nn.Linear(128, 2) if object=="carina" else nn.Linear(128, 4)
+        nn.Linear(128, 2) if object=="carina" else nn.Linear(128, 5)
         ])
     elif model_num == 2:
         modules.extend([
@@ -149,7 +149,7 @@ def get_gloria(object="carina", model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(32),
         nn.Flatten(),
-        nn.Linear(32*4*2, 2) if object=="carina" else nn.Linear(32*4*2, 4)
+        nn.Linear(32*4*2, 2) if object=="carina" else nn.Linear(32*4*2, 5)
         ])
 
     model = nn.Sequential(*modules)

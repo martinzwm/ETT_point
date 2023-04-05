@@ -24,7 +24,8 @@ def log_images(model, dataset, device, model_1=None, object="carina", r=10):
         if model_1 is not None:
             predicted = model_1(image)
             image, gt_box = crop_image(image.squeeze_(0), predicted.squeeze_(0), gt_box)
-        predicted = model(image.unsqueeze_(0))
+        predicted = model(image)
+        predicted = predicted[:, :4]
         predicted = predicted.cpu().detach().numpy()
         
         if object == "carina":
