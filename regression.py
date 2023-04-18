@@ -255,11 +255,14 @@ def forward(images, targets, model, device, model_1=None):
     return predicted, centers
 
 
-def pipeline(evaluate=False):
+def pipeline(evaluate=0):
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+    # Load data
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
     
+    # Load model
     if arg.backbone == "resnet":
         model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     else: # need to change the working directory to import from cxrlearn
@@ -270,6 +273,7 @@ def pipeline(evaluate=False):
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
 
+    # Load model 1 if training model 2
     model_1 = None
     if arg.model_num == 2:
         if arg.model1_ckpt == None:
@@ -280,6 +284,7 @@ def pipeline(evaluate=False):
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
         model_1.to(device)
 
+    # If we just want to evaluate the model, we don't need to train
     if evaluate == 1:
         print("Testing on test set ...")
         test_loss = test(model, dataloader_test, device, model_1)
@@ -292,67 +297,34 @@ def pipeline(evaluate=False):
         df.to_csv("normal_vs_abnormal.csv")
         return
         
-
+    # Train
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
     if arg.logging:
-        # wandb.init(project='ETT-MIMIC-1105-224')
         wandb.init(project='ETT-debug')
         wandb.config = {}
+    val_loss = train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
 
-    train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
-    print("Testing on test set ...")
-    model.load_state_dict(torch.load(
-        "ckpts/{}_{}_model{}_lr={}_bs={}.pt".format(
-            arg.backbone,
-            arg.model_num,
-            round(optimizer.param_groups[0]['lr'], 5),
-            arg.batch_size,
-            )
-        ))
-    test_loss = test(model, dataloader_test, device, model_1)
-
-    if arg.logging:
-        wandb.log({"test/loss": test_loss})
-        wandb.finish()
-
-
-def search_objective():
-    wandb.init(project='ETT-debug')
-    config = wandb.config
-    arg.backbone = config['backbone']
-    arg.lr = round(config['lr'], 5)
-    arg.batch_size = config['batch_size']
-    print(arg.backbone, arg.lr, arg.batch_size)
-
-    torch.manual_seed(1234)
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    dataloader_train, dataloader_val, _ = get_dataloader()
-
-    if arg.backbone == "resnet":
-        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
-    else: # need to change the working directory to import from cxrlearn
-        os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
-        os.chdir(os.path.join(os.getcwd(), ".."))
-    if arg.ckpt != None:
-        model.load_state_dict(torch.load(arg.ckpt))
-    model.to(device)
-
-    model_1 = None
-    if arg.model_num == 2:
-        if arg.model1_ckpt == None:
-            raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
-        os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model_1 = get_model(backbone=arg.backbone, model_num=1)
-        os.chdir(os.path.join(os.getcwd(), ".."))
-        model_1.load_state_dict(torch.load(arg.model1_ckpt))
-        model_1.to(device)
-
-    params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.Adam(params, lr=arg.lr)
-    val_loss = train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1=model_1)
-    wandb.log({"loss": val_loss})
+    # Evaluate
+    if arg.mode == "train":
+        # Test on the best model so far
+        print("Testing on test set ...")
+        model.load_state_dict(torch.load(
+            "ckpts/{}_{}_model{}_lr={}_bs={}.pt".format(
+                arg.backbone,
+                arg.model_num,
+                round(optimizer.param_groups[0]['lr'], 5),
+                arg.batch_size,
+                )
+            ))
+        test_loss = test(model, dataloader_test, device, model_1)
+        if arg.logging:
+            wandb.log({"test/loss": test_loss})
+            wandb.finish()
+    elif arg.mode == "search":
+        wandb.log({"val/loss": val_loss})
+    else:
+        raise ValueError("Invalid mode")
 
 
 def hyperparameter_search():
@@ -371,7 +343,7 @@ def hyperparameter_search():
         }
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-debug')
-    wandb.agent(sweep_id, function=search_objective, count=10)
+    wandb.agent(sweep_id, function=pipeline, count=10)
     wandb.finish()
 
 
@@ -386,7 +358,7 @@ if __name__ == "__main__":
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
     parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105-224', help='Path for dataset')
-    parser.add_argument('--mode', type=int, default=0, help='0: regular pipeline, 1: hyperparameter search, 2: inference')
+    parser.add_argument('--mode', type=str, default='train', help='train: regular pipeline, search: hyperparameter search, infernece: inference')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluation mode: 0: train and test, 1: test, 2: classify normal vs abnormal')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')
 
@@ -394,9 +366,9 @@ if __name__ == "__main__":
     arg.logging = True if arg.logging == 1 else False
     arg.finetune = True if arg.finetune == 1 else False
 
-    if arg.mode == 0:
+    if arg.mode == 'train':
         pipeline(arg.evaluate)
-    elif arg.mode == 1:
+    elif arg.mode == 'search':
         hyperparameter_search()
-    elif arg.mode == 2:
+    elif arg.mode == 'inference':
         inference(arg.dataset_path)
