@@ -8,7 +8,7 @@ from dataset import view_img
 from transforms import MU, STD
 
 
-def log_images(model, dataset, device, model_1=None, object="carina", r=10):
+def log_images(model, dataset, device, model_1=None, r=10):
     # Randomly select 3 images from the validation set, and plot the predicted center
     # and the ground truth center.
     indices = np.random.choice(len(dataset), size=3, replace=False)
@@ -27,11 +27,7 @@ def log_images(model, dataset, device, model_1=None, object="carina", r=10):
         predicted = model(image)
         predicted = predicted[:, :4]
         predicted = predicted.cpu().detach().numpy()
-        
-        if object == "carina":
-            gt_box = gt_box[0].unsqueeze(0)
-        elif object == "both":
-            predicted = predicted.reshape(2, -1)
+        predicted = predicted.reshape(2, -1)
         gt_box = gt_box.cpu().detach().numpy()
         gt = np.array([(gt_box[:, 0] + gt_box[:, 2]) / 2, (gt_box[:, 1] + gt_box[:, 3]) / 2])
         gt = gt.transpose()

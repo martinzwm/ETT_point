@@ -8,17 +8,17 @@ import torchvision
 import cxrlearn.cxrlearn as cxrlearn
 
 
-def get_model(backbone="resnet", object="carina", model_num=1, finetune=False):
+def get_model(backbone="resnet", model_num=1, finetune=False):
     if backbone == "resnet":
-        model = get_resnet(object, model_num=model_num, finetune=finetune)
+        model = get_resnet(model_num=model_num, finetune=finetune)
     elif backbone == "chexzero":
-        model = get_chexzero(object, model_num=model_num, finetune=finetune)
+        model = get_chexzero(model_num=model_num, finetune=finetune)
     elif backbone == "mococxr":
-        model = get_mococxr(object, model_num=model_num, finetune=finetune)
+        model = get_mococxr( model_num=model_num, finetune=finetune)
     elif backbone == "refers":
-        model = get_refers(object, model_num=model_num, finetune=finetune)
+        model = get_refers(model_num=model_num, finetune=finetune)
     elif backbone == "gloria":
-        model = get_gloria(object, model_num=model_num, finetune=finetune)
+        model = get_gloria(model_num=model_num, finetune=finetune)
     elif backbone == "CNN":
         model = get_CNN()
     return model
@@ -46,7 +46,7 @@ def get_chexzero(model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm1d(8),
         nn.Flatten(),
-        nn.Linear(8, 2)
+        nn.Linear(8, 5)
     ]
     model = nn.Sequential(*modules)
     return model
@@ -75,7 +75,7 @@ def get_mococxr(model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(32),
         nn.Flatten(),
-        nn.Linear(32*7*7, 2)
+        nn.Linear(32*7*7, 5)
     ]
     model = nn.Sequential(*modules)
     return model
@@ -103,13 +103,13 @@ def get_refers(model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm1d(8),
         nn.Flatten(),
-        nn.Linear(8, 2)
+        nn.Linear(8, 5)
     ]
     model = nn.Sequential(*modules)
     return model
 
 
-def get_gloria(object="carina", model_num=1, finetune=False):
+def get_gloria(model_num=1, finetune=False):
     """
     Backbone: GLORIA
     """
@@ -135,7 +135,7 @@ def get_gloria(object="carina", model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(128),
         nn.Flatten(),
-        nn.Linear(128, 2) if object=="carina" else nn.Linear(128, 5)
+        nn.Linear(128, 5)
         ])
     elif model_num == 2:
         modules.extend([
@@ -149,7 +149,7 @@ def get_gloria(object="carina", model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(32),
         nn.Flatten(),
-        nn.Linear(32*4*2, 2) if object=="carina" else nn.Linear(32*4*2, 5)
+        nn.Linear(32*4*2, 5)
         ])
 
     model = nn.Sequential(*modules)
@@ -184,7 +184,7 @@ def get_resnet(object="carina", model_num=1, finetune=False):
             nn.ReLU(),
             nn.BatchNorm2d(32),
             nn.Flatten(),
-            nn.Linear(128, 2) if object=="carina" else nn.Linear(128, 4)
+            nn.Linear(128, 5)
             ])
     elif model_num == 2:
         modules.extend([
@@ -192,7 +192,7 @@ def get_resnet(object="carina", model_num=1, finetune=False):
             nn.Linear(512, 128),
             nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Linear(128, 2)
+            nn.Linear(128, 5)
             ])
     
     model = nn.Sequential(*modules)
@@ -212,7 +212,7 @@ def get_CNN():
         ResNetBlock(96, 112, 3, 2),
         ResNetBlock(112, 128, 3, 2),
         nn.Flatten(),
-        nn.Linear(128*2*2, 2),
+        nn.Linear(128*2*2, 5),
     )
     print(model)
     return model

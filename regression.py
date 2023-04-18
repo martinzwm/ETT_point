@@ -32,10 +32,8 @@ def get_dataloader():
 
     val_size, test_size = int(N * 0.2), int(N * 0.2)
     indices = torch.randperm(N).tolist()
-    # dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
-    # dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
-    dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size+test_size])
-    dataset_val = torch.utils.data.Subset(dataset_val, indices[(N-test_size):])
+    dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
+    dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
     dataset_test = torch.utils.data.Subset(dataset_test, indices[(N-test_size):])
 
     # define training and validation data loaders
@@ -66,15 +64,13 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             if predicted is None:
                 continue
             
-            # Loss
+            # Loss (3 components: carina, ETT, distance)
             loss = F.mse_loss(predicted[:, :4], centers)
-            if arg.loss == "distance":
-                # predicted distance between carina and ETT
-                # dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
-                dist = predicted[:, 4]
-                # actual distance between carina and ETT
-                dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
-                loss += F.mse_loss(dist, dist_gt)
+            # predicted distance between carina and ETT
+            dist = predicted[:, 4]
+            # actual distance between carina and ETT
+            dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
+            loss += F.mse_loss(dist, dist_gt)
 
             optimizer.zero_grad()
             loss.backward()
@@ -91,19 +87,17 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/{}_{}_model{}_lr={}_bs={}_loss={}.pt".format(
-                    arg.object,
+                "ckpts/{}_model{}_lr={}_bs={}.pt".format(
                     arg.backbone,
                     arg.model_num,
                     round(optimizer.param_groups[0]['lr'], 5),
                     arg.batch_size,
-                    arg.loss,
                     )
                 )
         
         # Log to wandb
         if arg.logging:
-            dst = log_images(model, dataset_val, device, model_1, object=arg.object, r=2)
+            dst = log_images(model, dataset_val, device, model_1, r=2)
             wandb.log({
                 "train/loss": train_loss, 
                 "val/loss": val_loss,
@@ -123,38 +117,31 @@ def test(model, dataset_test, device, model_1=None):
         if predicted is None:
                 continue
         with torch.no_grad():
-            # L2 loss
-            if arg.object == "carina":
-                carina_loss = F.mse_loss(predicted, centers)
-                carina_losses.append(torch.sqrt(carina_loss).item())
-            elif arg.object == "both":
-                carina_loss = F.mse_loss(predicted[:, :2], centers[:, :2])
-                ett_loss = F.mse_loss(predicted[:, 2:4], centers[:, 2:4])
-                carina_losses.append(torch.sqrt(carina_loss).item())
-                ett_losses.append(torch.sqrt(ett_loss).item())
+            # Carina and ETT loss
+            carina_loss = F.mse_loss(predicted[:, :2], centers[:, :2])
+            ett_loss = F.mse_loss(predicted[:, 2:4], centers[:, 2:4])
+            carina_losses.append(torch.sqrt(carina_loss).item())
+            ett_losses.append(torch.sqrt(ett_loss).item())
 
-            if arg.loss == "distance":
-                # predicted distance between carina and ETT
-                # dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
-                dist = predicted[:, 4]
-                # actual distance between carina and ETT
-                dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:4])**2, dim=1))
-                loss = F.mse_loss(dist, dist_gt)
-                dist_losses.append(torch.sqrt(loss).item())
-            
+            # Distance loss
+            # predicted distance between carina and ETT
+            dist = predicted[:, 4]
+            # actual distance between carina and ETT
+            dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:4])**2, dim=1))
+            loss = F.mse_loss(dist, dist_gt)
+            dist_losses.append(torch.sqrt(loss).item())
+        
     carina_avg_loss = round( sum(carina_losses) / len(carina_losses), 1)
     print("\t carina L2 loss: ", carina_avg_loss)
     total_loss = carina_avg_loss
-    if arg.object == "both":
-        ett_avg_loss = round( sum(ett_losses) / len(ett_losses), 1)
-        print("\t ETT L2 loss: ", ett_avg_loss)
-        total_loss += ett_avg_loss
-        # print("\t Total detection loss: ", total_loss)
     
-    if arg.loss == "distance":
-        dist_avg_loss = round( sum(dist_losses) / len(dist_losses), 1)
-        print("\t dist L2 loss: ", dist_avg_loss)
-        total_loss += dist_avg_loss
+    ett_avg_loss = round( sum(ett_losses) / len(ett_losses), 1)
+    print("\t ETT L2 loss: ", ett_avg_loss)
+    total_loss += ett_avg_loss
+    
+    dist_avg_loss = round( sum(dist_losses) / len(dist_losses), 1)
+    print("\t dist L2 loss: ", dist_avg_loss)
+    total_loss += dist_avg_loss
 
     return total_loss
 
@@ -174,63 +161,6 @@ def classify_normal(model, dataset_test, device, model_1=None):
             dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
             dists_gt.extend(dist_gt.cpu().tolist())
     return dists, dists_gt, dists_model
-
-
-def inference(test_img_folder):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    # load model
-    os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-    model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
-    os.chdir(os.path.join(os.getcwd(), ".."))
-    model.load_state_dict(torch.load(arg.ckpt))
-    model.to(device)
-    model.eval()
-
-    # load transform
-    transform = get_transform(train=False)
-
-    # load test images and predict
-    result = []
-    ctr = 0
-    for img_name in os.listdir(test_img_folder):
-        ctr += 1
-        if ctr % 100 == 0:
-            print(ctr)
-        # prediction
-        img_path = os.path.join(test_img_folder, img_name)
-        img = Image.open(img_path).convert("RGB")
-        img, _ = transform(img, None)
-        img = img.unsqueeze(0).to(device)
-        predicted = model(img)
-        predicted = predicted.cpu().detach().numpy()
-
-        # save result
-        carina = predicted[0, :2]
-        ett = predicted[0, 2:4]
-        dist = predicted[0, 4]
-        dist1 = np.sqrt(np.sum((carina - ett)**2))
-        result.append([img_name, carina[0], carina[1], ett[0], ett[0], dist, dist1])
-
-        # Draw result
-        img = img.cpu().detach().numpy()[0]
-        img = np.transpose(img, (1, 2, 0))
-        mean = np.array([MU, MU, MU])
-        std = np.array([STD, STD, STD])
-        img = std * img + mean
-        img = (img * 255).astype(np.uint8)
-
-        img = Image.fromarray(img)
-        draw = ImageDraw.Draw(img)
-        r = 3
-        draw.ellipse((carina[0]-r, carina[1]-r, carina[0]+r, carina[1]+r), fill='green')
-        draw.ellipse((ett[0]-r, ett[1]-r, ett[0]+r, ett[1]+r), fill='blue')
-        img_save_path = os.path.join("/home/ec2-user/data/ranzcr/inference", img_name)
-        img.save(img_save_path)
-    
-    # save result
-    df = pd.DataFrame(result, columns=["image_name", "carina_x", "carina_y", "ett_x", "ett_y", "dist", "dist1"])
-    df.to_csv("inference.csv", index=False)
 
 
 def forward(images, targets, model, device, model_1=None):
@@ -262,43 +192,42 @@ def forward(images, targets, model, device, model_1=None):
         dim=1
     )
     centers = centers.permute(0, 2, 1)
-    
-    if arg.object == "carina":
-        centers = centers[:, 0, :]
-    elif arg.object == "both":
-        centers = centers.reshape(centers.size(0), -1)
-    else:
-        raise ValueError("Invalid object type, needs to be either carina or both")
+    centers = centers.reshape(centers.size(0), -1)
     centers = centers.to(device)
 
     return predicted, centers
 
 
-def pipeline(evaluate=False):
+def pipeline(evaluate=0):
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+    # Load data
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
     
+    # Load model
     if arg.backbone == "resnet":
-        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     else: # need to change the working directory to import from cxrlearn
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
         os.chdir(os.path.join(os.getcwd(), ".."))
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
 
+    # Load model 1 if training model 2
     model_1 = None
     if arg.model_num == 2:
         if arg.model1_ckpt == None:
             raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model_1 = get_model(backbone=arg.backbone, object=arg.object, model_num=1)
+        model_1 = get_model(backbone=arg.backbone, model_num=1)
         os.chdir(os.path.join(os.getcwd(), ".."))
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
         model_1.to(device)
 
+    # If we just want to evaluate the model, we don't need to train
     if evaluate == 1:
         print("Testing on test set ...")
         test_loss = test(model, dataloader_test, device, model_1)
@@ -311,70 +240,34 @@ def pipeline(evaluate=False):
         df.to_csv("normal_vs_abnormal.csv")
         return
         
-
+    # Train
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
     if arg.logging:
-        # wandb.init(project='ETT-MIMIC-1105-224')
         wandb.init(project='ETT-debug')
         wandb.config = {}
+    val_loss = train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
 
-    train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
-    print("Testing on test set ...")
-    model.load_state_dict(torch.load(
-        "ckpts/{}_{}_model{}_lr={}_bs={}_loss={}.pt".format(
-            arg.object,
-            arg.backbone,
-            arg.model_num,
-            round(optimizer.param_groups[0]['lr'], 5),
-            arg.batch_size,
-            arg.loss,
-            )
-        ))
-    test_loss = test(model, dataloader_test, device, model_1)
-
-    if arg.logging:
-        wandb.log({"test/loss": test_loss})
-        wandb.finish()
-
-
-def search_objective():
-    wandb.init(project='ETT-debug')
-    config = wandb.config
-    arg.backbone = config['backbone']
-    arg.lr = round(config['lr'], 5)
-    arg.batch_size = config['batch_size']
-    arg.loss = config['loss']
-    print(arg.backbone, arg.lr, arg.batch_size, arg.loss)
-
-    torch.manual_seed(1234)
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    dataloader_train, dataloader_val, _ = get_dataloader()
-
-    if arg.backbone == "resnet":
-        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
-    else: # need to change the working directory to import from cxrlearn
-        os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
-        os.chdir(os.path.join(os.getcwd(), ".."))
-    if arg.ckpt != None:
-        model.load_state_dict(torch.load(arg.ckpt))
-    model.to(device)
-
-    model_1 = None
-    if arg.model_num == 2:
-        if arg.model1_ckpt == None:
-            raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
-        os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model_1 = get_model(backbone=arg.backbone, object=arg.object, model_num=1)
-        os.chdir(os.path.join(os.getcwd(), ".."))
-        model_1.load_state_dict(torch.load(arg.model1_ckpt))
-        model_1.to(device)
-
-    params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.Adam(params, lr=arg.lr)
-    val_loss = train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1=model_1)
-    wandb.log({"loss": val_loss})
+    # Evaluate
+    if arg.mode == "train":
+        # Test on the best model so far
+        print("Testing on test set ...")
+        model.load_state_dict(torch.load(
+            "ckpts/{}_model{}_lr={}_bs={}.pt".format(
+                arg.backbone,
+                arg.model_num,
+                round(optimizer.param_groups[0]['lr'], 5),
+                arg.batch_size,
+                )
+            ))
+        test_loss = test(model, dataloader_test, device, model_1)
+        if arg.logging:
+            wandb.log({"test/loss": test_loss})
+            wandb.finish()
+    elif arg.mode == "search":
+        wandb.log({"val/loss": val_loss})
+    else:
+        raise ValueError("Invalid mode")
 
 
 def hyperparameter_search():
@@ -393,7 +286,7 @@ def hyperparameter_search():
         }
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-debug')
-    wandb.agent(sweep_id, function=search_objective, count=10)
+    wandb.agent(sweep_id, function=pipeline, count=10)
     wandb.finish()
 
 
@@ -405,22 +298,18 @@ if __name__ == "__main__":
     parser.add_argument('--epoch', type=int, default=20, help='Number of epochs')
     parser.add_argument('--finetune', type=int, default=0, help='Finetune the model')
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
-    parser.add_argument('--loss', type=str, default='mse', help='Loss function')
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
     parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105-224', help='Path for dataset')
-    parser.add_argument('--mode', type=int, default=0, help='0: regular pipeline, 1: hyperparameter search, 2: inference')
+    parser.add_argument('--mode', type=str, default='train', help='train: regular pipeline, search: hyperparameter search')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluation mode: 0: train and test, 1: test, 2: classify normal vs abnormal')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')
-    parser.add_argument('--object', type=str, default='carina', help='Detect carina or both carina and ETT')
 
     arg = parser.parse_args()
     arg.logging = True if arg.logging == 1 else False
     arg.finetune = True if arg.finetune == 1 else False
 
-    if arg.mode == 0:
+    if arg.mode == 'train':
         pipeline(arg.evaluate)
-    elif arg.mode == 1:
+    elif arg.mode == 'search':
         hyperparameter_search()
-    elif arg.mode == 2:
-        inference(arg.dataset_path)
