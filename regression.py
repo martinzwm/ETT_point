@@ -253,7 +253,7 @@ def pipeline(evaluate=0):
         # Test on the best model so far
         print("Testing on test set ...")
         model.load_state_dict(torch.load(
-            "ckpts/{}_{}_model{}_lr={}_bs={}.pt".format(
+            "ckpts/{}_model{}_lr={}_bs={}.pt".format(
                 arg.backbone,
                 arg.model_num,
                 round(optimizer.param_groups[0]['lr'], 5),
