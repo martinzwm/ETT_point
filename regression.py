@@ -91,8 +91,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/{}_{}_model{}_lr={}_bs={}_loss={}.pt".format(
-                    arg.object,
+                "ckpts/{}_model{}_lr={}_bs={}_loss={}.pt".format(
                     arg.backbone,
                     arg.model_num,
                     round(optimizer.param_groups[0]['lr'], 5),
@@ -103,7 +102,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         
         # Log to wandb
         if arg.logging:
-            dst = log_images(model, dataset_val, device, model_1, object=arg.object, r=2)
+            dst = log_images(model, dataset_val, device, model_1, r=2)
             wandb.log({
                 "train/loss": train_loss, 
                 "val/loss": val_loss,
@@ -124,14 +123,10 @@ def test(model, dataset_test, device, model_1=None):
                 continue
         with torch.no_grad():
             # L2 loss
-            if arg.object == "carina":
-                carina_loss = F.mse_loss(predicted, centers)
-                carina_losses.append(torch.sqrt(carina_loss).item())
-            elif arg.object == "both":
-                carina_loss = F.mse_loss(predicted[:, :2], centers[:, :2])
-                ett_loss = F.mse_loss(predicted[:, 2:4], centers[:, 2:4])
-                carina_losses.append(torch.sqrt(carina_loss).item())
-                ett_losses.append(torch.sqrt(ett_loss).item())
+            carina_loss = F.mse_loss(predicted[:, :2], centers[:, :2])
+            ett_loss = F.mse_loss(predicted[:, 2:4], centers[:, 2:4])
+            carina_losses.append(torch.sqrt(carina_loss).item())
+            ett_losses.append(torch.sqrt(ett_loss).item())
 
             if arg.loss == "distance":
                 # predicted distance between carina and ETT
@@ -145,11 +140,9 @@ def test(model, dataset_test, device, model_1=None):
     carina_avg_loss = round( sum(carina_losses) / len(carina_losses), 1)
     print("\t carina L2 loss: ", carina_avg_loss)
     total_loss = carina_avg_loss
-    if arg.object == "both":
-        ett_avg_loss = round( sum(ett_losses) / len(ett_losses), 1)
-        print("\t ETT L2 loss: ", ett_avg_loss)
-        total_loss += ett_avg_loss
-        # print("\t Total detection loss: ", total_loss)
+    ett_avg_loss = round( sum(ett_losses) / len(ett_losses), 1)
+    print("\t ETT L2 loss: ", ett_avg_loss)
+    total_loss += ett_avg_loss
     
     if arg.loss == "distance":
         dist_avg_loss = round( sum(dist_losses) / len(dist_losses), 1)
@@ -181,7 +174,7 @@ def inference(test_img_folder):
 
     # load model
     os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-    model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
+    model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     os.chdir(os.path.join(os.getcwd(), ".."))
     model.load_state_dict(torch.load(arg.ckpt))
     model.to(device)
@@ -262,13 +255,7 @@ def forward(images, targets, model, device, model_1=None):
         dim=1
     )
     centers = centers.permute(0, 2, 1)
-    
-    if arg.object == "carina":
-        centers = centers[:, 0, :]
-    elif arg.object == "both":
-        centers = centers.reshape(centers.size(0), -1)
-    else:
-        raise ValueError("Invalid object type, needs to be either carina or both")
+    centers = centers.reshape(centers.size(0), -1)
     centers = centers.to(device)
 
     return predicted, centers
@@ -280,10 +267,10 @@ def pipeline(evaluate=False):
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
     
     if arg.backbone == "resnet":
-        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     else: # need to change the working directory to import from cxrlearn
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
         os.chdir(os.path.join(os.getcwd(), ".."))
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
@@ -294,7 +281,7 @@ def pipeline(evaluate=False):
         if arg.model1_ckpt == None:
             raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model_1 = get_model(backbone=arg.backbone, object=arg.object, model_num=1)
+        model_1 = get_model(backbone=arg.backbone, model_num=1)
         os.chdir(os.path.join(os.getcwd(), ".."))
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
         model_1.to(device)
@@ -323,7 +310,6 @@ def pipeline(evaluate=False):
     print("Testing on test set ...")
     model.load_state_dict(torch.load(
         "ckpts/{}_{}_model{}_lr={}_bs={}_loss={}.pt".format(
-            arg.object,
             arg.backbone,
             arg.model_num,
             round(optimizer.param_groups[0]['lr'], 5),
@@ -352,10 +338,10 @@ def search_objective():
     dataloader_train, dataloader_val, _ = get_dataloader()
 
     if arg.backbone == "resnet":
-        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
     else: # need to change the working directory to import from cxrlearn
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model = get_model(backbone=arg.backbone, object=arg.object, model_num=arg.model_num, finetune=arg.finetune)
+        model = get_model(backbone=arg.backbone, model_num=arg.model_num, finetune=arg.finetune)
         os.chdir(os.path.join(os.getcwd(), ".."))
     if arg.ckpt != None:
         model.load_state_dict(torch.load(arg.ckpt))
@@ -366,7 +352,7 @@ def search_objective():
         if arg.model1_ckpt == None:
             raise ValueError("Need to provide the checkpoint for model 1 when training model 2")
         os.chdir(os.path.join(os.getcwd(), "cxrlearn"))
-        model_1 = get_model(backbone=arg.backbone, object=arg.object, model_num=1)
+        model_1 = get_model(backbone=arg.backbone, model_num=1)
         os.chdir(os.path.join(os.getcwd(), ".."))
         model_1.load_state_dict(torch.load(arg.model1_ckpt))
         model_1.to(device)
@@ -412,7 +398,6 @@ if __name__ == "__main__":
     parser.add_argument('--mode', type=int, default=0, help='0: regular pipeline, 1: hyperparameter search, 2: inference')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluation mode: 0: train and test, 1: test, 2: classify normal vs abnormal')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')
-    parser.add_argument('--object', type=str, default='carina', help='Detect carina or both carina and ETT')
 
     arg = parser.parse_args()
     arg.logging = True if arg.logging == 1 else False
