@@ -32,10 +32,8 @@ def get_dataloader():
 
     val_size, test_size = int(N * 0.2), int(N * 0.2)
     indices = torch.randperm(N).tolist()
-    # dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
-    # dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
-    dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size+test_size])
-    dataset_val = torch.utils.data.Subset(dataset_val, indices[(N-test_size):])
+    dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
+    dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
     dataset_test = torch.utils.data.Subset(dataset_test, indices[(N-test_size):])
 
     # define training and validation data loaders
@@ -66,15 +64,13 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             if predicted is None:
                 continue
             
-            # Loss
+            # Loss (3 components: carina, ETT, distance)
             loss = F.mse_loss(predicted[:, :4], centers)
-            if arg.loss == "distance":
-                # predicted distance between carina and ETT
-                # dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
-                dist = predicted[:, 4]
-                # actual distance between carina and ETT
-                dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
-                loss += F.mse_loss(dist, dist_gt)
+            # predicted distance between carina and ETT
+            dist = predicted[:, 4]
+            # actual distance between carina and ETT
+            dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
+            loss += F.mse_loss(dist, dist_gt)
 
             optimizer.zero_grad()
             loss.backward()
@@ -91,12 +87,11 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/{}_model{}_lr={}_bs={}_loss={}.pt".format(
+                "ckpts/{}_model{}_lr={}_bs={}.pt".format(
                     arg.backbone,
                     arg.model_num,
                     round(optimizer.param_groups[0]['lr'], 5),
                     arg.batch_size,
-                    arg.loss,
                     )
                 )
         
@@ -122,32 +117,31 @@ def test(model, dataset_test, device, model_1=None):
         if predicted is None:
                 continue
         with torch.no_grad():
-            # L2 loss
+            # Carina and ETT loss
             carina_loss = F.mse_loss(predicted[:, :2], centers[:, :2])
             ett_loss = F.mse_loss(predicted[:, 2:4], centers[:, 2:4])
             carina_losses.append(torch.sqrt(carina_loss).item())
             ett_losses.append(torch.sqrt(ett_loss).item())
 
-            if arg.loss == "distance":
-                # predicted distance between carina and ETT
-                # dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:])**2, dim=1))
-                dist = predicted[:, 4]
-                # actual distance between carina and ETT
-                dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:4])**2, dim=1))
-                loss = F.mse_loss(dist, dist_gt)
-                dist_losses.append(torch.sqrt(loss).item())
-            
+            # Distance loss
+            # predicted distance between carina and ETT
+            dist = predicted[:, 4]
+            # actual distance between carina and ETT
+            dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:4])**2, dim=1))
+            loss = F.mse_loss(dist, dist_gt)
+            dist_losses.append(torch.sqrt(loss).item())
+        
     carina_avg_loss = round( sum(carina_losses) / len(carina_losses), 1)
     print("\t carina L2 loss: ", carina_avg_loss)
     total_loss = carina_avg_loss
+    
     ett_avg_loss = round( sum(ett_losses) / len(ett_losses), 1)
     print("\t ETT L2 loss: ", ett_avg_loss)
     total_loss += ett_avg_loss
     
-    if arg.loss == "distance":
-        dist_avg_loss = round( sum(dist_losses) / len(dist_losses), 1)
-        print("\t dist L2 loss: ", dist_avg_loss)
-        total_loss += dist_avg_loss
+    dist_avg_loss = round( sum(dist_losses) / len(dist_losses), 1)
+    print("\t dist L2 loss: ", dist_avg_loss)
+    total_loss += dist_avg_loss
 
     return total_loss
 
@@ -309,12 +303,11 @@ def pipeline(evaluate=False):
     train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
     print("Testing on test set ...")
     model.load_state_dict(torch.load(
-        "ckpts/{}_{}_model{}_lr={}_bs={}_loss={}.pt".format(
+        "ckpts/{}_{}_model{}_lr={}_bs={}.pt".format(
             arg.backbone,
             arg.model_num,
             round(optimizer.param_groups[0]['lr'], 5),
             arg.batch_size,
-            arg.loss,
             )
         ))
     test_loss = test(model, dataloader_test, device, model_1)
@@ -330,8 +323,7 @@ def search_objective():
     arg.backbone = config['backbone']
     arg.lr = round(config['lr'], 5)
     arg.batch_size = config['batch_size']
-    arg.loss = config['loss']
-    print(arg.backbone, arg.lr, arg.batch_size, arg.loss)
+    print(arg.backbone, arg.lr, arg.batch_size)
 
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -391,7 +383,6 @@ if __name__ == "__main__":
     parser.add_argument('--epoch', type=int, default=20, help='Number of epochs')
     parser.add_argument('--finetune', type=int, default=0, help='Finetune the model')
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
-    parser.add_argument('--loss', type=str, default='mse', help='Loss function')
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
     parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105-224', help='Path for dataset')

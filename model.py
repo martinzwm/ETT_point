@@ -46,7 +46,7 @@ def get_chexzero(model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm1d(8),
         nn.Flatten(),
-        nn.Linear(8, 4)
+        nn.Linear(8, 5)
     ]
     model = nn.Sequential(*modules)
     return model
@@ -75,7 +75,7 @@ def get_mococxr(model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(32),
         nn.Flatten(),
-        nn.Linear(32*7*7, 4)
+        nn.Linear(32*7*7, 5)
     ]
     model = nn.Sequential(*modules)
     return model
@@ -103,7 +103,7 @@ def get_refers(model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm1d(8),
         nn.Flatten(),
-        nn.Linear(8, 4)
+        nn.Linear(8, 5)
     ]
     model = nn.Sequential(*modules)
     return model
