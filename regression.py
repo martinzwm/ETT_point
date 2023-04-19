@@ -97,7 +97,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         
         # Log to wandb
         if arg.logging:
-            dst = log_images(model, dataset_val, device, model_1, r=2)
+            dst = log_images(model, dataset_val, device, model_1, r=10)
             wandb.log({
                 "train/loss": train_loss, 
                 "val/loss": val_loss,
@@ -199,8 +199,17 @@ def forward(images, targets, model, device, model_1=None):
 
 
 def pipeline(evaluate=0):
+    # Logistics
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    if arg.logging:
+        wandb.init(project='ETT-debug')
+    if arg.mode == "search":
+        config = wandb.config
+        arg.backbone = config['backbone']
+        arg.lr = round(config['lr'], 5)
+        arg.batch_size = config['batch_size']
+        print(arg.backbone, arg.lr, arg.batch_size)
 
     # Load data
     dataloader_train, dataloader_val, dataloader_test = get_dataloader()
@@ -239,13 +248,10 @@ def pipeline(evaluate=0):
         df = pd.DataFrame({"dists": dists, "dists_gt": dists_gt, "dists_model": dists_model})
         df.to_csv("normal_vs_abnormal.csv")
         return
-        
+
     # Train
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=arg.lr)
-    if arg.logging:
-        wandb.init(project='ETT-debug')
-        wandb.config = {}
     val_loss = train(model, dataloader_train, dataloader_val, optimizer, device, arg.epoch, model_1)
 
     # Evaluate
@@ -281,12 +287,11 @@ def hyperparameter_search():
             'lr': {'distribution': 'log_uniform', 
                    'min': int(np.floor(np.log(1e-5))), 
                    'max': int(np.ceil(np.log(1e-3)))},
-            'batch_size': {'values': [2, 4, 8, 16]},
-            'loss': {'values': ['distance']},
+            'batch_size': {'values': [2, 4]},
         }
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-debug')
-    wandb.agent(sweep_id, function=pipeline, count=10)
+    wandb.agent(sweep_id, function=pipeline, count=20)
     wandb.finish()
 
 
@@ -300,7 +305,7 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
-    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105-224', help='Path for dataset')
+    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105', help='Path for dataset')
     parser.add_argument('--mode', type=str, default='train', help='train: regular pipeline, search: hyperparameter search')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluation mode: 0: train and test, 1: test, 2: classify normal vs abnormal')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')

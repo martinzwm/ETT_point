@@ -128,14 +128,16 @@ def get_gloria(model_num=1, finetune=False):
 
     if model_num == 1:
         modules.extend([
-        nn.Conv2d(2048, 512, kernel_size=(3, 3), stride=(2, 2)),
-        nn.ReLU(),
-        nn.BatchNorm2d(512),
-        nn.Conv2d(512, 128, kernel_size=(3, 3), stride=(2, 2)),
-        nn.ReLU(),
-        nn.BatchNorm2d(128),
+        ResNetBlock(2048, 1024, 1, 1),
+        nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False),        
+        ResNetBlock(1024, 512, 1, 1),
+        nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False),   
+        ResNetBlock(512, 256, 1, 1),
+        nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False), 
+        ResNetBlock(256, 128, 1, 1),
+        nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False),        
         nn.Flatten(),
-        nn.Linear(128, 5)
+        nn.Linear(512, 5)
         ])
     elif model_num == 2:
         modules.extend([
@@ -217,6 +219,7 @@ def get_CNN():
     print(model)
     return model
 
+
 class ResNetBlock(nn.Module):
     def __init__(self, in_channels, out_channels, num_conv1_layers, stride):
         super(ResNetBlock, self).__init__()
@@ -251,9 +254,6 @@ class ResNetBlock(nn.Module):
             x = layer(x)
         out = self.conv2(x)
         out = self.bn2(out)
-        
         out += self.shortcut(residual)
         out = self.relu(out)
-        
         return out
-
