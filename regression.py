@@ -21,8 +21,8 @@ from model import get_model
 def get_dataloader():
     dataset_train = CXRDataset(
         root=arg.dataset_path, 
-        image_dir='downsized_norm',
-        ann_file='annotations_downsized.json',
+        image_dir='PNGImages',
+        ann_file='annotations-512.json',
         transforms=get_transform(train=True)
         )
     dataset_val = deepcopy(dataset_train)
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
-    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105', help='Path for dataset')
+    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105-512', help='Path for dataset')
     parser.add_argument('--mode', type=str, default='train', help='train: regular pipeline, search: hyperparameter search')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluation mode: 0: train and test, 1: test, 2: classify normal vs abnormal')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')

@@ -13,10 +13,6 @@ def get_model(backbone="resnet", model_num=1, finetune=False):
         model = get_resnet(model_num=model_num, finetune=finetune)
     elif backbone == "chexzero":
         model = get_chexzero(model_num=model_num, finetune=finetune)
-    elif backbone == "mococxr":
-        model = get_mococxr( model_num=model_num, finetune=finetune)
-    elif backbone == "refers":
-        model = get_refers(model_num=model_num, finetune=finetune)
     elif backbone == "gloria":
         model = get_gloria(model_num=model_num, finetune=finetune)
     elif backbone == "CNN":
@@ -52,63 +48,6 @@ def get_chexzero(model_num=1, finetune=False):
     return model
 
 
-def get_mococxr(model_num=1, finetune=False):
-    """
-    Backbone: MocoCXR
-    """
-    model = cxrlearn.mococxr(
-        model="resnet50",
-        freeze_backbone=(finetune==False),
-        num_out=14, # this is dummy b/c we're not using the last layer
-        device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-        )
-
-    modules = [
-        *list(model.children())[:-2],
-        nn.Conv2d(2048, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        nn.ReLU(),
-        nn.BatchNorm2d(512),
-        nn.Conv2d(512, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        nn.ReLU(),
-        nn.BatchNorm2d(128),
-        nn.Conv2d(128, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-        nn.ReLU(),
-        nn.BatchNorm2d(32),
-        nn.Flatten(),
-        nn.Linear(32*7*7, 5)
-    ]
-    model = nn.Sequential(*modules)
-    return model
-
-
-def get_refers(model_num=1, finetune=False):
-    """
-    Backbone: REFERS
-    """
-    model = cxrlearn.refers(
-        freeze_backbone=(finetune==False),
-        num_out=None,
-        device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-        )
-
-    modules = [
-        model,
-        nn.Linear(768, 128),
-        nn.ReLU(),
-        nn.BatchNorm1d(128),
-        nn.Linear(128, 32),
-        nn.ReLU(),
-        nn.BatchNorm1d(32),
-        nn.Linear(32, 8),
-        nn.ReLU(),
-        nn.BatchNorm1d(8),
-        nn.Flatten(),
-        nn.Linear(8, 5)
-    ]
-    model = nn.Sequential(*modules)
-    return model
-
-
 def get_gloria(model_num=1, finetune=False):
     """
     Backbone: GLORIA
@@ -128,16 +67,12 @@ def get_gloria(model_num=1, finetune=False):
 
     if model_num == 1:
         modules.extend([
-        ResNetBlock(2048, 1024, 1, 1),
-        nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False),        
-        ResNetBlock(1024, 512, 1, 1),
-        nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False),   
-        ResNetBlock(512, 256, 1, 1),
-        nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False), 
-        ResNetBlock(256, 128, 1, 1),
-        nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False),        
+        ResNetBlock(2048, 1024, 1, 2),
+        ResNetBlock(1024, 512, 1, 2),
+        ResNetBlock(512, 256, 1, 2),
+        ResNetBlock(256, 128, 1, 2),
         nn.Flatten(),
-        nn.Linear(512, 5)
+        nn.Linear(128, 5)
         ])
     elif model_num == 2:
         modules.extend([
@@ -151,7 +86,7 @@ def get_gloria(model_num=1, finetune=False):
         nn.ReLU(),
         nn.BatchNorm2d(32),
         nn.Flatten(),
-        nn.Linear(32*4*2, 5)
+        nn.Linear(32*2, 5)
         ])
 
     model = nn.Sequential(*modules)
