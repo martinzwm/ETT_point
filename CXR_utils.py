@@ -8,6 +8,8 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 import torchxrayvision as xrv
 import torch 
 
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 def view_gt_bbox(
     root="/home/ec2-user/data/MIMIC_ETT_annotations", 
     annotation_file='annotations.json', 
@@ -176,14 +178,48 @@ def get_stats(root="/home/ec2-user/data/MIMIC_ETT_annotations", image_dir='PNGIm
     std /= len(os.listdir( os.path.join(root, image_dir)))
     print("Mean of the dataset: ", mean)
     print("Std of the dataset: ", std)
-    
+
+
+def generate_segmask(
+    root="/home/ec2-user/data/MIMIC-1105", 
+    image_dir='PNGImage', save_name='segmask.json'
+    ):
+    segmask = {}
+    model = xrv.baseline_models.chestx_det.PSPNet()
+    model = model.to(DEVICE)
+
+    # traverse through all images in directory
+    ctr = 0
+    for file_path in os.listdir(os.path.join(root, image_dir)):
+        image_path = os.path.join(root, image_dir, file_path)
+        image = Image.open(image_path).convert("RGB")
+
+        image = np.array(image)
+        image = xrv.datasets.normalize(image, 255) # convert 8-bit image to [-1024, 1024] range
+        image = image.mean(2)[None, ...] # Make single color channel
+        image = torch.from_numpy(image).unsqueeze_(0)
+        image = image.to(DEVICE)
+        
+        pred = model(image).detach().cpu().numpy()
+        pred = pred[0, 12, :, :]
+        segmask[file_path] = pred.tolist()
+
+        if ctr % 100 == 0:
+            print(ctr)
+        ctr += 1
+
+    # save segmask to json
+    with open(os.path.join(root, save_name), 'w') as outfile:
+        json.dump(segmask, outfile)
+
 
 if __name__ == "__main__":
     # downsize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized-512')
-    view_gt_bbox(
-        root="/home/ec2-user/data/MIMIC-1105-512", 
-        annotation_file='annotations-512.json', 
-        image_dir='PNGImages', target_dir='bbox-512'
-        )
+    # view_gt_bbox(
+    #     root="/home/ec2-user/data/MIMIC-1105-512", 
+    #     annotation_file='annotations-512.json', 
+    #     image_dir='PNGImages', target_dir='bbox-512'
+    #     )
     # normalize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized_norm')
     # get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_norm')
+    generate_segmask(root="/home/ec2-user/data/MIMIC-1105-512", image_dir='PNGImages', save_name='segmask.json')
