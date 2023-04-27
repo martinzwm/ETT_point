@@ -5,6 +5,8 @@ import cv2
 from PIL import Image, ImageDraw, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+import torchxrayvision as xrv
+import torch 
 
 def view_gt_bbox(
     root="/home/ec2-user/data/MIMIC_ETT_annotations", 
@@ -26,6 +28,8 @@ def view_gt_bbox(
         if ann['image_id'] not in id_to_ann:
             id_to_ann[ann['image_id']] = []
         id_to_ann[ann['image_id']].append(i)
+    
+    seg_model = xrv.baseline_models.chestx_det.PSPNet()
 
     # draw bbox
     for file_path in os.listdir( os.path.join(root, image_dir)):
@@ -42,24 +46,59 @@ def view_gt_bbox(
                 xmax = xmin + w
                 ymax = ymin + h
                 bbox = [xmin, ymin, xmax, ymax]
-                image = draw_single_bbox(image, bbox)
+                image = draw_single_bbox(image, bbox, seg_model)
 
         image.save(os.path.join(root, target_dir, file_path))
 
 
-def draw_single_bbox(image, bbox):
+def draw_single_bbox(image, bbox, seg_model=None):
+    # run segmentation model
+    image = draw_trachea(image, seg_model)
+
+    # draw bbox
     labelled_img = ImageDraw.Draw(image)
     shapes = [bbox]
     labelled_img.rectangle(shapes[0], outline="red", width = 1)
     return image
 
 
+def draw_trachea(image, seg_model=None):
+    image = np.array(image)
+    orig_image = image[:, :, 0]
+    image = xrv.datasets.normalize(image, 255) # convert 8-bit image to [-1024, 1024] range
+    image = image.mean(2)[None, ...] # Make single color channel
+    image = torch.from_numpy(image).float()
+
+    with torch.no_grad():
+        pred = seg_model(image)
+    # visualize as binary mask
+    pred = 1 / (1 + np.exp(-pred))  # sigmoid
+    pred[pred < 0.5] = 0
+    pred[pred > 0.5] = 1
+    mask = pred[0, 12].numpy()
+
+    # Convert the grayscale image to RGB
+    img_rgb = np.stack((orig_image, orig_image, orig_image), axis=-1)
+
+    # Create a colored version of the mask with transparency
+    color = np.array([0, 255, 0], dtype=np.uint8)  # Green color
+    alpha = 0.2  # Transparency factor, between 0 (fully transparent) and 1 (fully opaque)
+    mask_colored = np.stack((mask, mask, mask), axis=-1) * color * alpha
+
+    # Overlay the mask on the original image
+    result = np.where(mask_colored > 0, img_rgb * (1 - alpha) + mask_colored, img_rgb)
+
+    # convert back to PIL image
+    result = Image.fromarray(result.astype('uint8'), 'RGB')
+    return result
+
+
 def downsize(
     root="/home/ec2-user/data/MIMIC_ETT_annotations", 
     image_dir='PNGImages', target_dir='downsized'):
-    resized_dim = 224
+    resized_dim = 512
     # load target.json
-    f = open(os.path.join(root, 'annotations.json'))
+    f = open(os.path.join(root, 'annotations_original.json'))
     data = json.load(f)
 
     # downsize images
@@ -102,7 +141,7 @@ def downsize(
         ann['bbox'][3] = ann['bbox'][3] * resized_dim / curr_dim
     
     # save target.json
-    with open(os.path.join(root, 'annotations_downsized.json'), 'w') as outfile:
+    with open(os.path.join(root, 'annotations_downsized_512.json'), 'w') as outfile:
         json.dump(data, outfile)
 
 
@@ -140,11 +179,11 @@ def get_stats(root="/home/ec2-user/data/MIMIC_ETT_annotations", image_dir='PNGIm
     
 
 if __name__ == "__main__":
-    # downsize(root="/home/ec2-user/data/MIMIC-1105", image_dir='PNGImages', target_dir='downsized_norm')
+    # downsize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized-512')
     view_gt_bbox(
-        root="/home/ec2-user/data/MIMIC-1105-224", 
-        annotation_file='annotations_downsized.json', 
-        image_dir='downsized', target_dir='bbox_downsized'
+        root="/home/ec2-user/data/MIMIC-1105-512", 
+        annotation_file='annotations-512.json', 
+        image_dir='PNGImages', target_dir='bbox-512'
         )
     # normalize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized_norm')
     # get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_norm')
