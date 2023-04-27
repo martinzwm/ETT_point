@@ -29,6 +29,7 @@ class CXRDataset(torch.utils.data.Dataset):
         root, 
         image_dir='PNGImages',
         ann_file='annotations.json',
+        segmask_file='segmasks.json',
         transforms=None, 
         ):
         self.root = root
@@ -44,6 +45,10 @@ class CXRDataset(torch.utils.data.Dataset):
         f = open(os.path.join(root, ann_file))
         self.json = json.load(f)
         self._load_annotations()
+
+        # load segmask
+        f = open(os.path.join(root, segmask_file))
+        self.img_to_segmask  = json.load(f)
     
 
     def _load_annotations(self):
@@ -58,12 +63,11 @@ class CXRDataset(torch.utils.data.Dataset):
         for i, ann in enumerate(self.json['annotations']):
             if ann['image_id'] not in self.id_to_ann:
                 self.id_to_ann[ann['image_id']] = []
-            # self.id_to_ann[ann['image_id']].append(ann['id'])
             self.id_to_ann[ann['image_id']].append(i)
 
 
     def __getitem__(self, idx):
-        # load images ad masks
+        # load images
         img_path = os.path.join(self.root, self.image_dir, self.imgs[idx])
         img = Image.open(img_path).convert("RGB")
         
@@ -92,8 +96,7 @@ class CXRDataset(torch.utils.data.Dataset):
         labels = torch.as_tensor(labels, dtype=torch.int64)
         image_id = torch.tensor([idx])
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
-        # suppose all instances are not crowd
-        iscrowd = torch.zeros((num_objs,), dtype=torch.int64)
+        iscrowd = torch.zeros((num_objs,), dtype=torch.int64) # suppose all instances are not crowd
 
         target = {}
         target["boxes"] = boxes
@@ -101,6 +104,11 @@ class CXRDataset(torch.utils.data.Dataset):
         target["image_id"] = image_id
         target["area"] = area
         target["iscrowd"] = iscrowd
+
+        # load segmask from torchxrayvision
+        segmask = self.img_to_segmask[self.imgs[idx]]
+        segmask = torch.as_tensor(segmask, dtype=torch.float32)
+        target["trachea_mask"] = segmask
 
         if self.transforms is not None:
             img, target = self.transforms(img, target)
@@ -126,9 +134,9 @@ def view_img(image, bbox):
 
 if __name__ == "__main__":
     dataset = CXRDataset(
-            root='/home/ec2-user/data/MIMIC-1105-224', 
-            image_dir='downsized',
-            ann_file='annotations_downsized.json',
+            root='/home/ec2-user/data/MIMIC-1105-512', 
+            image_dir='PNGImages',
+            ann_file='annotations-512.json',
             transforms=get_transform(train=True),
             )
     print(dataset[0])

@@ -182,7 +182,7 @@ def get_stats(root="/home/ec2-user/data/MIMIC_ETT_annotations", image_dir='PNGIm
 
 def generate_segmask(
     root="/home/ec2-user/data/MIMIC-1105", 
-    image_dir='PNGImage', save_name='segmask.json'
+    image_dir='PNGImage', save_name='segmasks.json'
     ):
     segmask = {}
     model = xrv.baseline_models.chestx_det.PSPNet()
@@ -222,4 +222,4 @@ if __name__ == "__main__":
     #     )
     # normalize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized_norm')
     # get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_norm')
-    generate_segmask(root="/home/ec2-user/data/MIMIC-1105-512", image_dir='PNGImages', save_name='segmask.json')
+    generate_segmask(root="/home/ec2-user/data/MIMIC-1105-512", image_dir='PNGImages', save_name='segmasks.json')
