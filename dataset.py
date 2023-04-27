@@ -7,15 +7,15 @@ import json
 import transforms as T
 from transforms import MU, STD
 
+import torchxrayvision as xrv
+import torch 
+import cv2
+
 
 # Data augementation
 def get_transform(train):
     transforms = []
     transforms.append(T.ToTensor()) # converts a PIL image to a PyTorch Tensor
-    transforms.append(T.Normalize(
-        [MU, MU, MU], 
-        [STD, STD, STD]
-        )) # normalize
     if train:
         transforms.append(T.RandomHorizontalFlip(0.5))
         transforms.append(T.RandomRotate(5))
@@ -29,13 +29,14 @@ class CXRDataset(torch.utils.data.Dataset):
         root, 
         image_dir='PNGImages',
         ann_file='annotations.json',
-        segmask_file='segmasks.json',
         transforms=None, 
+        device="cpu",
         ):
         self.root = root
         self.image_dir = image_dir
         self.ann_file = ann_file
         self.transforms = transforms
+        self.device = device
 
         # load all image files, sorting them to
         # ensure that they are aligned
@@ -46,9 +47,13 @@ class CXRDataset(torch.utils.data.Dataset):
         self.json = json.load(f)
         self._load_annotations()
 
-        # load segmask
-        f = open(os.path.join(root, segmask_file))
-        self.img_to_segmask  = json.load(f)
+        # load torchxrayvision segmentation model
+        self.segmodel = xrv.baseline_models.chestx_det.PSPNet()
+        self.segmodel.to(self.device)
+
+        # parameters for CLAHE - Contrast Limited Adaptive Histogram Equalization
+        self.clip_limit = 3.0
+        self.tile_grid_size = (8, 8)
     
 
     def _load_annotations(self):
@@ -105,15 +110,41 @@ class CXRDataset(torch.utils.data.Dataset):
         target["area"] = area
         target["iscrowd"] = iscrowd
 
-        # load segmask from torchxrayvision
-        segmask = self.img_to_segmask[self.imgs[idx]]
-        segmask = torch.as_tensor(segmask, dtype=torch.float32)
-        target["trachea_mask"] = segmask
-
-        if self.transforms is not None:
-            img, target = self.transforms(img, target)
+        # Transformations
+        img, target = self.transforms(img, target) # Apply augmentations
+        target["trachea_mask"] = self.generate_segmask(img) # Generate segmask
+        img = self.adjust_contrast(img) # Adjust contrast
+        img = (img - MU) / STD # Normalize
         return img, target
+    
 
+    def generate_segmask(self, img):
+        segmask = img * 255
+        segmask = segmask.permute(1, 2, 0).numpy()
+        segmask = xrv.datasets.normalize(segmask, 255) # convert 8-bit image to [-1024, 1024] range
+        segmask = segmask.mean(2)[None, ...] # Make single color channel
+        segmask = torch.from_numpy(segmask).unsqueeze_(0)
+        segmask = segmask.to(self.device)
+        segmask = self.segmodel(segmask).detach().cpu().numpy()
+        segmask = segmask[0, 12, :, :]
+        segmask = torch.from_numpy(segmask)
+        return segmask
+    
+
+    def adjust_contrast(self, img):
+        img = img * 255
+        img = img.permute(1, 2, 0).numpy()
+        img = img.astype('uint8')
+        gray_image = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(self.clip_limit, self.tile_grid_size)
+        equalized_image = clahe.apply(gray_image) / 255
+        equalized_image = torch.from_numpy(equalized_image)
+        # duplicate 3 times to get 3 channels
+        equalized_image = equalized_image.unsqueeze_(0)
+        equalized_image = equalized_image.expand(3, -1, -1)
+        return equalized_image
+
+    
     def __len__(self):
         return len(self.imgs)
 
