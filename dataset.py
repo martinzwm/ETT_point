@@ -7,10 +7,6 @@ import json
 import transforms as T
 from transforms import MU, STD
 
-import torchxrayvision as xrv
-import torch 
-import cv2
-
 
 # Data augementation
 def get_transform(train):
@@ -30,13 +26,11 @@ class CXRDataset(torch.utils.data.Dataset):
         image_dir='PNGImages',
         ann_file='annotations.json',
         transforms=None, 
-        device="cpu",
         ):
         self.root = root
         self.image_dir = image_dir
         self.ann_file = ann_file
         self.transforms = transforms
-        self.device = device
 
         # load all image files, sorting them to
         # ensure that they are aligned
@@ -46,14 +40,6 @@ class CXRDataset(torch.utils.data.Dataset):
         f = open(os.path.join(root, ann_file))
         self.json = json.load(f)
         self._load_annotations()
-
-        # load torchxrayvision segmentation model
-        self.segmodel = xrv.baseline_models.chestx_det.PSPNet()
-        self.segmodel.to(self.device)
-
-        # parameters for CLAHE - Contrast Limited Adaptive Histogram Equalization
-        self.clip_limit = 3.0
-        self.tile_grid_size = (8, 8)
     
 
     def _load_annotations(self):
@@ -96,7 +82,6 @@ class CXRDataset(torch.utils.data.Dataset):
                 ymax = ann['bbox'][1] + ann['bbox'][3]
                 boxes[lab-3046] = [xmin, ymin, xmax, ymax]
 
-
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
         labels = torch.as_tensor(labels, dtype=torch.int64)
         image_id = torch.tensor([idx])
@@ -112,37 +97,7 @@ class CXRDataset(torch.utils.data.Dataset):
 
         # Transformations
         img, target = self.transforms(img, target) # Apply augmentations
-        target["trachea_mask"] = self.generate_segmask(img) # Generate segmask
-        img = self.adjust_contrast(img) # Adjust contrast
-        img = (img - MU) / STD # Normalize
         return img, target
-    
-
-    def generate_segmask(self, img):
-        segmask = img * 255
-        segmask = segmask.permute(1, 2, 0).numpy()
-        segmask = xrv.datasets.normalize(segmask, 255) # convert 8-bit image to [-1024, 1024] range
-        segmask = segmask.mean(2)[None, ...] # Make single color channel
-        segmask = torch.from_numpy(segmask).unsqueeze_(0)
-        segmask = segmask.to(self.device)
-        segmask = self.segmodel(segmask).detach().cpu().numpy()
-        segmask = segmask[0, 12, :, :]
-        segmask = torch.from_numpy(segmask)
-        return segmask
-    
-
-    def adjust_contrast(self, img):
-        img = img * 255
-        img = img.permute(1, 2, 0).numpy()
-        img = img.astype('uint8')
-        gray_image = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(self.clip_limit, self.tile_grid_size)
-        equalized_image = clahe.apply(gray_image) / 255
-        equalized_image = torch.from_numpy(equalized_image)
-        # duplicate 3 times to get 3 channels
-        equalized_image = equalized_image.unsqueeze_(0)
-        equalized_image = equalized_image.expand(3, -1, -1)
-        return equalized_image
 
     
     def __len__(self):
@@ -165,9 +120,9 @@ def view_img(image, bbox):
 
 if __name__ == "__main__":
     dataset = CXRDataset(
-            root='/home/ec2-user/data/MIMIC-1105-512', 
-            image_dir='PNGImages',
-            ann_file='annotations-512.json',
+            root='/home/ec2-user/data/MAIDA', 
+            image_dir='norm-512',
+            ann_file='anno_downsized.json',
             transforms=get_transform(train=True),
             )
     print(dataset[0])

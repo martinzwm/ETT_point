@@ -5,6 +5,7 @@ import cv2
 from PIL import Image, ImageDraw, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 import pydicom
+import shutil
 
 import torchxrayvision as xrv
 import torch 
@@ -37,7 +38,7 @@ def view_gt_bbox(
     # draw bbox
     error_ids = [
         4380029, 4380064, 4146693, 4379950, 4380433, 4380206, 4380559, 4146035, 4380713,
-        4379767, 4379731, 4380006, 4380560, 4146328, 4380406, 4146445, 4146193, 2946144
+        4379767, 4379731, 4380006, 4380560, 4146328, 4380406, 4146445, 4146193, 2946144,
         ]
     for i, file_path in enumerate( os.listdir( os.path.join(root, image_dir)) ):
         print(i, file_path)
@@ -240,6 +241,40 @@ def generate_segmask(
         json.dump(segmask, outfile)
 
 
+def move_corrupted_images(
+        root = "/home/ec2-user/data/MAIDA",
+        image_dir = 'norm-512', target_dir = 'corrupted-512',
+        error_ids = None,
+        ):
+        error_ids = [
+            'a47262e8-f6091196-8e01bbee-05135ac6-64f49a96.png',
+            'b935d184-c6a41da2-1b010e90-f2a0ee64-0071cd02.png',
+            '0243ae7e-17b5ad32-6d1dcc4d-1b88104b-ef020f97.png',
+            '40524a0f-86c821e2-e864cef6-df641195-736a9695.png',
+            '34ad06d4-475863f1-f3712cec-783c3b99-308cf886.png',
+            'ffa014fe-31d16e1a-3fb81bd7-80bf19d9-b7cba2c5.png',
+            '674c5306-1692a472-a26817d0-5cee641f-06d8efb7.png',
+            'a9042797-0293acb8-181d97fd-8db901a8-cad62048.png',
+            'a5e92382-516aa78b-96e78b5c-add9edb9-fb669ad4.png',
+            '09f8b265-36ff1b1a-59f9d43a-14fe4081-4fe45d36.png',
+            '6bc2ffd4-cd939fe7-d8693f51-92938280-c0684822.png',
+            '77307555-3c13553f-b0280559-2b144649-bdf9cd00.png',
+            '0679acdd-91621f0c-b78b1cea-616a1b90-efd9a441.png',
+            '78ced0ba-52b8ec30-e561e7f4-1cef117b-d04513b9.png',
+            '014f4bbd-b58f8a76-7a2c26a7-0eb8c5ca-c4a99388.png',
+            '09441900-ecc059ee-3b4ea545-8ef399ca-5ced7e0a.png',
+            '2d92c458-4f3b6026-64864b22-0a4433d9-d68bd6a2.png',
+            '3f33ebe6-6a1ddfb3-02d56727-44c3b635-abfa2730.png',
+        ]
+
+        for file_path in os.listdir(os.path.join(root, image_dir)):
+            if file_path in error_ids:
+                shutil.move(
+                    os.path.join(root, image_dir, file_path),
+                    os.path.join(root, target_dir, file_path)
+                )
+
+
 if __name__ == "__main__":
     # dcm_to_png(
     #     root="/home/ec2-user/data/MAIDA",
@@ -247,19 +282,25 @@ if __name__ == "__main__":
     #     )
 
     # downsize(
-    #     root="/home/ec2-user/data/MAIDA", 
+    #     root="/home/ec2-user/data/RANZCR", 
     #     image_dir='PNGImages', target_dir='downsized',
-    #     anno='MIMIC-ETT-annotations-cleaned.json', anno_downsized='anno_downsized.json',
+    #     anno='RANZCR-ETT-annotations.json', anno_downsized='anno_downsized.json',
     #     )
 
     # view_gt_bbox(
-    #     root="/home/ec2-user/data/MAIDA", 
+    #     root="/home/ec2-user/data/RANZCR", 
     #     annotation_file='anno_downsized.json', 
-    #     image_dir='downsized', target_dir='bbox-512'
+    #     image_dir='downsized-512', target_dir='bbox-512'
     #     )
 
-    # normalize(root="/home/ec2-user/data/MAIDA", image_dir='downsized-512', target_dir='norm-512')
+    # move_corrupted_images(
+    #     root = "/home/ec2-user/data/MAIDA",
+    #     image_dir = 'norm-512', target_dir = 'corrupted-512',
+    #     error_ids = None,
+    # )
+
+    # normalize(root="/home/ec2-user/data/RANZCR", image_dir='downsized-512', target_dir='norm-512')
     
-    get_stats(root="/home/ec2-user/data/MAIDA", image_dir='norm-512')
+    get_stats(root="/home/ec2-user/data/RANZCR", image_dir='norm-512')
     
     # generate_segmask(root="/home/ec2-user/data/MIMIC-1105-512", image_dir='PNGImages', save_name='segmasks.json')
