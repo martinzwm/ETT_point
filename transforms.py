@@ -4,7 +4,7 @@ import math
 from torchvision.transforms import functional as F
 normalized = True
 if normalized:
-    MU, STD = 0.52561661, 0.20110909
+    MU, STD = 0.52682959, 0.21921528
 else:
     MU, STD = 0.49714759, 0.21722301
     

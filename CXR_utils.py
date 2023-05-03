@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+import pydicom
 
 import torchxrayvision as xrv
 import torch 
@@ -34,10 +35,18 @@ def view_gt_bbox(
     seg_model = xrv.baseline_models.chestx_det.PSPNet()
 
     # draw bbox
-    for file_path in os.listdir( os.path.join(root, image_dir)):
-        print(file_path)
+    error_ids = [
+        4380029, 4380064, 4146693, 4379950, 4380433, 4380206, 4380559, 4146035, 4380713,
+        4379767, 4379731, 4380006, 4380560, 4146328, 4380406, 4146445, 4146193, 2946144
+        ]
+    for i, file_path in enumerate( os.listdir( os.path.join(root, image_dir)) ):
+        print(i, file_path)
         image_path = os.path.join(root, image_dir, file_path)
         image = Image.open(image_path).convert("RGB")
+
+        if img_to_id[file_path] in error_ids: # error
+            # image.save("error_{}".format(file_path))
+            continue
 
         ann_idx = id_to_ann[img_to_id[file_path]]
         bbox = None
@@ -54,13 +63,13 @@ def view_gt_bbox(
 
 
 def draw_single_bbox(image, bbox, seg_model=None):
-    # run segmentation model
-    image = draw_trachea(image, seg_model)
+    # # run segmentation model
+    # image = draw_trachea(image, seg_model)
 
     # draw bbox
     labelled_img = ImageDraw.Draw(image)
     shapes = [bbox]
-    labelled_img.rectangle(shapes[0], outline="red", width = 1)
+    labelled_img.rectangle(shapes[0], outline="red", width = 2)
     return image
 
 
@@ -95,16 +104,37 @@ def draw_trachea(image, seg_model=None):
     return result
 
 
+def dcm_to_png(
+    root="/home/ec2-user/data/MAIDA",
+    image_dir='data', target_dir='PNGImages'
+    ):
+    for file_path in os.listdir( os.path.join(root, image_dir)):
+        print(file_path)
+        image_path = os.path.join(root, image_dir, file_path)
+        if image_path.endswith('.dcm'):
+            ds = pydicom.dcmread(image_path)
+            pixel_array_numpy = ds.pixel_array.astype(float)
+            image = (np.maximum(pixel_array_numpy, 0) / pixel_array_numpy.max()) * 255.0
+            image = np.uint8(image)
+            if len(image.shape) == 2:  # If the image is grayscale, convert to RGB
+                image = np.stack((image,) * 3, axis=-1) 
+            image = Image.fromarray(image, 'RGB')
+            file_path = file_path.replace('.dcm', '.png')
+            image.save(os.path.join(root, target_dir, file_path))
+
+
 def downsize(
-    root="/home/ec2-user/data/MIMIC_ETT_annotations", 
-    image_dir='PNGImages', target_dir='downsized'):
+    root="/home/ec2-user/data/MAIDA", 
+    image_dir='PNGImages', target_dir='downsized',
+    anno="anno.json", anno_downsized="anno_downsized.json"
+    ):
     resized_dim = 512
     # load target.json
-    f = open(os.path.join(root, 'annotations_original.json'))
+    f = open(os.path.join(root, anno))
     data = json.load(f)
 
     # downsize images
-    for file_path in os.listdir( os.path.join(root, image_dir)):
+    for file_path in os.listdir(os.path.join(root, image_dir)):
         print(file_path)
         image_path = os.path.join(root, image_dir, file_path)
         image = Image.open(image_path).convert("RGB")
@@ -122,8 +152,6 @@ def downsize(
 
     # downsize gt bbox
     for i, ann in enumerate(data['annotations']):
-        if ann['image_id'] == 2946144: # corrupted image
-            continue
         if "bbox" not in ann:
             # print(ann)
             continue
@@ -141,9 +169,8 @@ def downsize(
         ann['bbox'][1] = ann['bbox'][1] * resized_dim / curr_dim
         ann['bbox'][2] = ann['bbox'][2] * resized_dim / curr_dim
         ann['bbox'][3] = ann['bbox'][3] * resized_dim / curr_dim
-    
     # save target.json
-    with open(os.path.join(root, 'annotations_downsized_512.json'), 'w') as outfile:
+    with open(os.path.join(root, anno_downsized), 'w') as outfile:
         json.dump(data, outfile)
 
 
@@ -152,7 +179,7 @@ def normalize(
     image_dir='downsized', target_dir='downsized_norm'
     ):
     clip_limit = 3.0
-    tile_grid_size = (32, 32)
+    tile_grid_size = (8, 8)
 
     for file_path in os.listdir(os.path.join(root, image_dir)):
         image_path = os.path.join(root, image_dir, file_path)
@@ -214,12 +241,25 @@ def generate_segmask(
 
 
 if __name__ == "__main__":
-    # downsize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized-512')
-    # view_gt_bbox(
-    #     root="/home/ec2-user/data/MIMIC-1105-512", 
-    #     annotation_file='annotations-512.json', 
-    #     image_dir='PNGImages', target_dir='bbox-512'
+    # dcm_to_png(
+    #     root="/home/ec2-user/data/MAIDA",
+    #     image_dir='data', target_dir='PNGImages'
     #     )
-    # normalize(root="/home/ec2-user/data/MIMIC-1105", image_dir='downsized', target_dir='downsized_norm')
-    # get_stats(root="/home/ec2-user/data/MIMIC-1105-224", image_dir='downsized_norm')
-    generate_segmask(root="/home/ec2-user/data/MIMIC-1105-512", image_dir='PNGImages', save_name='segmasks.json')
+
+    # downsize(
+    #     root="/home/ec2-user/data/MAIDA", 
+    #     image_dir='PNGImages', target_dir='downsized',
+    #     anno='MIMIC-ETT-annotations-cleaned.json', anno_downsized='anno_downsized.json',
+    #     )
+
+    # view_gt_bbox(
+    #     root="/home/ec2-user/data/MAIDA", 
+    #     annotation_file='anno_downsized.json', 
+    #     image_dir='downsized', target_dir='bbox-512'
+    #     )
+
+    # normalize(root="/home/ec2-user/data/MAIDA", image_dir='downsized-512', target_dir='norm-512')
+    
+    get_stats(root="/home/ec2-user/data/MAIDA", image_dir='norm-512')
+    
+    # generate_segmask(root="/home/ec2-user/data/MIMIC-1105-512", image_dir='PNGImages', save_name='segmasks.json')
