@@ -94,6 +94,7 @@ class CXRDataset(torch.utils.data.Dataset):
         target["image_id"] = image_id
         target["area"] = area
         target["iscrowd"] = iscrowd
+        target["image_id_original"] = self.img_to_id[self.imgs[idx]]
 
         # Transformations
         img, target = self.transforms(img, target) # Apply augmentations
@@ -125,4 +126,4 @@ if __name__ == "__main__":
             ann_file='anno_downsized.json',
             transforms=get_transform(train=True),
             )
-    print(len(dataset))
+    print(dataset[0])

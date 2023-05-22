@@ -82,7 +82,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         print("Training epoch: ", i+1, " / ", epoch, " ...")
         
         for images, targets in dataset_train:
-            predicted, centers = forward(images, targets, model, device, model_1)
+            predicted, centers, _ = forward(images, targets, model, device, model_1)
             if predicted is None:
                 continue
             
@@ -138,7 +138,7 @@ def test(model, dataset_test, device, model_1=None, save_to_csv=False):
         df = pd.DataFrame(columns=['image_id', 'category_id', 'x', 'y'])
 
     for images, targets in dataset_test:
-        predicted, centers = forward(images, targets, model, device, model_1)
+        predicted, centers, kept_ids = forward(images, targets, model, device, model_1)
         if predicted is None:
                 continue
         with torch.no_grad():
@@ -158,10 +158,10 @@ def test(model, dataset_test, device, model_1=None, save_to_csv=False):
 
             # Save to csv
             if save_to_csv:
-                for i in range(len(images)):
+                for i in range(len(predicted)): # note that we only consider images with ETT for now
                     # save carina coordinates
                     df = df.append({
-                        'image_id': targets[i]['image_id'],
+                        'image_id': kept_ids[i],
                         'category_id': 3046,
                         'x': predicted[i, 0].item(),
                         'y': predicted[i, 1].item()
@@ -169,7 +169,7 @@ def test(model, dataset_test, device, model_1=None, save_to_csv=False):
 
                     # save ETT coordinates
                     df = df.append({
-                        'image_id': targets[i]['image_id'],
+                        'image_id': kept_ids[i],
                         'category_id': 3047,
                         'x': predicted[i, 2].item(),
                         'y': predicted[i, 3].item()
@@ -198,7 +198,7 @@ def classify_normal(model, dataset_test, device, model_1=None):
     model.eval()
     dists, dists_gt, dists_model = [], [], []
     for images, targets in dataset_test:
-        predicted, centers = forward(images, targets, model, device, model_1)
+        predicted, centers, _ = forward(images, targets, model, device, model_1)
         with torch.no_grad():
             # predicted distance between carina and ETT
             dist = torch.sqrt(torch.sum((predicted[:, :2] - predicted[:, 2:4])**2, dim=1))
@@ -220,13 +220,13 @@ def forward(images, targets, model, device, model_1=None):
     bboxes = torch.stack([target['boxes'] for target in targets], dim=0)
 
     # Only keep the images that have ETT
-    to_remove = [i for i in range(len(targets)) if targets[i]['labels'][1] == 0]
-    if len(to_remove) == len(targets):
+    kept_indexes = [i for i in range(len(targets)) if targets[i]['labels'][1] != 0]
+    kept_ids = [targets[i]['image_id_original'] for i in kept_indexes]
+    if len(kept_ids) == 0:
         return None, None
     
-    for i in to_remove:
-        images = torch.cat((images[:i], images[i+1:]), dim=0)
-        bboxes = torch.cat((bboxes[:i], bboxes[i+1:]), dim=0)
+    images = images[kept_indexes]
+    bboxes = bboxes[kept_indexes]
 
     # Predict
     if model_1 is not None: # predict rough location of carina using model 1
@@ -243,7 +243,7 @@ def forward(images, targets, model, device, model_1=None):
     centers = centers.reshape(centers.size(0), -1)
     centers = centers.to(device)
 
-    return predicted, centers
+    return predicted, centers, kept_ids
 
 
 def pipeline(evaluate=0):
@@ -287,7 +287,7 @@ def pipeline(evaluate=0):
     # If we just want to evaluate the model, we don't need to train
     if evaluate == 1:
         print("Testing on test set ...")
-        test_loss = test(model, dataloader_test, device, model_1)
+        test_loss = test(model, dataloader_test, device, model_1, save_to_csv=True)
         return
     elif evaluate == 2:
         print("Testing on test set ...")
