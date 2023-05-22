@@ -120,9 +120,9 @@ def view_img(image, bbox):
 
 if __name__ == "__main__":
     dataset = CXRDataset(
-            root='/home/ec2-user/data/MAIDA', 
-            image_dir='norm-512',
+            root='/home/ec2-user/data/MAIDA_RANZCR', 
+            image_dir='train',
             ann_file='anno_downsized.json',
             transforms=get_transform(train=True),
             )
-    print(dataset[0])
+    print(len(dataset))

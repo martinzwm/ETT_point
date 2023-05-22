@@ -4,8 +4,10 @@ sys.path.append(os.path.join(os.getcwd(), 'cxrlearn'))
 
 import torch
 import torch.nn as nn
-import torchvision
+import torchxrayvision as xrv
 import cxrlearn.cxrlearn as cxrlearn
+from model_utils import *
+import matplotlib.pyplot as plt
 
 
 def get_model(backbone="resnet", model_num=1, finetune=False):
@@ -17,6 +19,8 @@ def get_model(backbone="resnet", model_num=1, finetune=False):
         model = get_gloria(model_num=model_num, finetune=finetune)
     elif backbone == "CNN":
         model = get_CNN()
+    elif backbone == "SAR":
+        model = get_SAR()
     return model
 
 
@@ -46,6 +50,108 @@ def get_chexzero(model_num=1, finetune=False):
     ]
     model = nn.Sequential(*modules)
     return model
+
+
+def get_SAR(model_num=1, finetune=False):
+    """
+    Backbone: SAR
+    """
+    model = SAR_point()
+    return model
+
+
+class SAR_point(nn.Module):
+    def __init__(self):
+        super(SAR_point, self).__init__()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # Freeze segmentation backbone from torchxray vision
+        self.backbone = xrv.baseline_models.chestx_det.PSPNet()
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+        # For point detection
+        self.point_1 = conv2DBatchNormRelu(
+            in_channels=1, k_size=3, n_filters=32, padding=1, stride=2, bias=False
+        )
+        self.point_2 = conv2DBatchNormRelu(
+            in_channels=32, k_size=3, n_filters=32, padding=1, stride=2, bias=False
+        )
+        self.point_3 = conv2DBatchNormRelu(
+            in_channels=32, k_size=3, n_filters=16, padding=1, stride=2, bias=False
+        )
+        self.point_4 = conv2DBatchNormRelu(
+            in_channels=16, k_size=3, n_filters=8, padding=1, stride=2, bias=False
+        )
+        self.point_fc = nn.Linear(8 * 4 * 4, 5)
+
+    
+    def preprocess(self, imgs):
+        x = torch.zeros((len(imgs), 1, 512, 512))
+        for i, img in enumerate(imgs):
+            img = img.cpu().numpy() * 255
+            img = xrv.datasets.normalize(img, 255)
+            img = img.mean(2)[None, ...] # Make single color channel
+            img = self.transform(img)
+            img = torch.from_numpy(img)
+            x[i] = img
+        return x.to(self.device)
+        
+
+    def forward(self, img):
+        img = self.preprocess(img)
+        print(img.size())
+        
+        model = xrv.baseline_models.chestx_det.PSPNet()
+        pred = model(img).detach().cpu().numpy()
+        print(pred.shape)
+
+        # plot using matplotlib and save to png
+        plt.imshow(pred[0, 12, :, :])
+
+
+
+        img = img.cpu().numpy()
+        img = xrv.datasets.normalize(img, 255) # convert 8-bit image to [-1024, 1024] range
+        print(img.shape)
+        img = img.mean(1)[None, ...] # Make single color channel
+        img = torch.from_numpy(img)
+        print(img.size())
+        raise NameError()
+        
+        model = xrv.baseline_models.chestx_det.PSPNet()
+        pred = model(img).detach().cpu().numpy()
+        print(pred.shape)
+
+        # visualize as heatmap
+        plt.imshow(pred.astype(np.uint8))
+        plt.show()
+        plt.savefig("mask.png")
+
+        raise NameError()
+    
+        x = self.preprocess(x)
+        x = self.backbone(x)
+        # visualize mask and save to .png
+        x = x.detach().cpu().numpy()
+        x = 1 / (1 + np.exp(-x))  # sigmoid
+        x[x < 0.5] = 0
+        x[x > 0.5] = 1
+        mask = x[0, 12]
+        print(mask.shape)
+        print(np.mean(mask), np.std(mask))
+        plt.imshow(mask)
+        plt.savefig("mask.png")
+        raise NameError()
+
+        x = x[:, 12, :, :].unsqueeze(1)
+        x = self.point_1(x)
+        x = self.point_2(x)
+        x = self.point_3(x)
+        x = self.point_4(x)
+        x = x.view(x.size(0), -1)
+        x = self.point_fc(x)
+        return x
 
 
 def get_gloria(model_num=1, finetune=False):
@@ -192,3 +298,36 @@ class ResNetBlock(nn.Module):
         out += self.shortcut(residual)
         out = self.relu(out)
         return out
+    
+
+from dataset import * 
+import numpy as np
+import torchvision
+import matplotlib.pyplot as plt
+
+
+if __name__ == "__main__":
+    # load image
+    dataset = CXRDataset(
+            root='/home/ec2-user/data/MIMIC-1105-512', 
+            image_dir='PNGImages',
+            ann_file='annotations-512.json',
+            transforms=get_transform(train=False),
+            )
+    img_original = dataset[100][0]
+    img_original = img_original * 255
+    img_original = img_original.permute(1, 2, 0)
+    img = np.array(img_original)
+
+    img = xrv.datasets.normalize(img, 255) # convert 8-bit image to [-1024, 1024] range
+    img = img.mean(2)[None, ...] # Make single color channel
+
+    img = torch.from_numpy(img).unsqueeze_(0)
+    
+    model = xrv.baseline_models.chestx_det.PSPNet()
+    pred = model(img).detach().cpu().numpy()
+    print(pred.shape)
+
+    # plot using matplotlib and save to png
+    plt.imshow(pred[0, 12, :, :])
+    plt.savefig('test.png')

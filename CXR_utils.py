@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 import pydicom
 import shutil
+import pandas as pd
 
 import torchxrayvision as xrv
 import torch 
@@ -275,6 +276,87 @@ def move_corrupted_images(
                 )
 
 
+def combine_dataset(
+        maida_folder="/home/ec2-user/data/MAIDA/norm-512",
+        ranzcr_folder="/home/ec2-user/data/RANZCR/norm-512",
+        csv_file="/home/ec2-user/ETT_Evaluation/data_split/all_data_split.csv",
+        target_folder="/home/ec2-user/data/MAIDA_RANZCR",
+    ):
+    df = pd.read_csv(csv_file)
+    error_ids = [
+            'a47262e8-f6091196-8e01bbee-05135ac6-64f49a96',
+            'b935d184-c6a41da2-1b010e90-f2a0ee64-0071cd02',
+            '0243ae7e-17b5ad32-6d1dcc4d-1b88104b-ef020f97',
+            '40524a0f-86c821e2-e864cef6-df641195-736a9695',
+            '34ad06d4-475863f1-f3712cec-783c3b99-308cf886',
+            'ffa014fe-31d16e1a-3fb81bd7-80bf19d9-b7cba2c5',
+            '674c5306-1692a472-a26817d0-5cee641f-06d8efb7',
+            'a9042797-0293acb8-181d97fd-8db901a8-cad62048',
+            'a5e92382-516aa78b-96e78b5c-add9edb9-fb669ad4',
+            '09f8b265-36ff1b1a-59f9d43a-14fe4081-4fe45d36',
+            '6bc2ffd4-cd939fe7-d8693f51-92938280-c0684822',
+            '77307555-3c13553f-b0280559-2b144649-bdf9cd00',
+            '0679acdd-91621f0c-b78b1cea-616a1b90-efd9a441',
+            '78ced0ba-52b8ec30-e561e7f4-1cef117b-d04513b9',
+            '014f4bbd-b58f8a76-7a2c26a7-0eb8c5ca-c4a99388',
+            '09441900-ecc059ee-3b4ea545-8ef399ca-5ced7e0a',
+            '2d92c458-4f3b6026-64864b22-0a4433d9-d68bd6a2',
+            '3f33ebe6-6a1ddfb3-02d56727-44c3b635-abfa2730',
+            '1f808e34-141acb56-8d53cbff-36d59896-ed88b35f',
+            "1.2.826.0.1.3680043.8.498.16515999586137292214341617674809427578",
+        ]
+    
+    for index, row in df.iterrows():
+        source = row['Source']
+        file_name = row['FileName']
+        split = row['Split']
+
+        # Skip the error ids
+        if file_name in error_ids:
+            continue
+        
+        # Determine the source folder
+        if source == 'MIMIC':
+            source_folder = maida_folder
+            if not file_name.endswith('.png'):
+                file_name += '.png'
+        elif source == 'RANZCR':
+            source_folder = ranzcr_folder
+            if not file_name.endswith('.jpg'):
+                file_name += '.jpg'
+        else:
+            print(f"Unknown source {source} for file {file_name}")
+            continue
+        
+        # Determine the destination folder based on the 'Split' column
+        dest_folder = os.path.join(target_folder, split)
+        src_path = os.path.join(source_folder, file_name)
+        dest_path = os.path.join(dest_folder, file_name)
+        shutil.copyfile(src_path, dest_path)
+
+        if index % 100 == 0:
+            print("Completed {}".format(index))
+
+
+def combine_jsons(
+        anno_maida="/home/ec2-user/data/MAIDA/anno_downsized.json",
+        anno_ranzcr="/home/ec2-user/data/RANZCR/anno_downsized.json",
+        anno_combined="/home/ec2-user/data/MAIDA_RANZCR/anno_downsized.json",
+    ):
+    with open(anno_maida, 'r') as f:
+        maida = json.load(f)
+
+    with open(anno_ranzcr, 'r') as f:
+        ranzcr = json.load(f)
+
+    combined = maida
+    combined['images'] += ranzcr['images']
+    combined['annotations'] += ranzcr['annotations']
+
+    with open(anno_combined, 'w') as f:
+        json.dump(combined, f)
+    
+
 if __name__ == "__main__":
     # dcm_to_png(
     #     root="/home/ec2-user/data/MAIDA",
@@ -301,6 +383,19 @@ if __name__ == "__main__":
 
     # normalize(root="/home/ec2-user/data/RANZCR", image_dir='downsized-512', target_dir='norm-512')
     
-    get_stats(root="/home/ec2-user/data/RANZCR", image_dir='norm-512')
+    # get_stats(root="/home/ec2-user/data/RANZCR", image_dir='norm-512')
     
     # generate_segmask(root="/home/ec2-user/data/MIMIC-1105-512", image_dir='PNGImages', save_name='segmasks.json')
+
+    # combine_dataset(
+    #     maida_folder="/home/ec2-user/data/MAIDA/norm-512", 
+    #     ranzcr_folder="/home/ec2-user/data/RANZCR/norm-512", 
+    #     csv_file="/home/ec2-user/ETT_Evaluation/data_split/all_data_split.csv", 
+    #     target_folder="/home/ec2-user/data/MAIDA_RANZCR"
+    #     )
+
+    combine_jsons(
+        anno_maida="/home/ec2-user/data/MAIDA/anno_downsized.json",
+        anno_ranzcr="/home/ec2-user/data/RANZCR/anno_downsized.json",
+        anno_combined="/home/ec2-user/data/MAIDA_RANZCR/anno_downsized.json",
+    )

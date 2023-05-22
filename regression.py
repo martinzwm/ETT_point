@@ -15,26 +15,48 @@ import pandas as pd
 
 from dataset import *
 from pipeline_utils import *
-from model import get_model
+from model_cxr import get_model
 
 
 def get_dataloader():
+    # dataset_train = CXRDataset(
+    #     root=arg.dataset_path, 
+    #     image_dir='norm-512',
+    #     ann_file='anno_downsized.json',
+    #     transforms=get_transform(train=True),
+    #     )
+    # dataset_val = deepcopy(dataset_train)
+    # dataset_val.transforms = get_transform(train=False)
+    # dataset_test = deepcopy(dataset_val)
+    # N = len(dataset_train)
+
+    # val_size, test_size = int(N * 0.2), int(N * 0.2)
+    # indices = torch.randperm(N).tolist()
+    # dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
+    # dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
+    # dataset_test = torch.utils.data.Subset(dataset_test, indices[(N-test_size):])
+
     dataset_train = CXRDataset(
         root=arg.dataset_path, 
-        image_dir='PNGImages',
-        ann_file='annotations-512.json',
-        transforms=get_transform(train=True)
-        )
-    dataset_val = deepcopy(dataset_train)
-    dataset_val.transforms = get_transform(train=False)
-    dataset_test = deepcopy(dataset_val)
-    N = len(dataset_train)
+        image_dir='train',
+        ann_file='anno_downsized.json',
+        transforms=get_transform(train=True),
+    )
 
-    val_size, test_size = int(N * 0.2), int(N * 0.2)
-    indices = torch.randperm(N).tolist()
-    dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
-    dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
-    dataset_test = torch.utils.data.Subset(dataset_test, indices[(N-test_size):])
+    dataset_val = CXRDataset(
+        root=arg.dataset_path, 
+        image_dir='val',
+        ann_file='anno_downsized.json',
+        transforms=get_transform(train=False),
+    )
+
+    dataset_test = CXRDataset(
+        root=arg.dataset_path, 
+        image_dir='test',
+        ann_file='anno_downsized.json',
+        transforms=get_transform(train=False),
+    )
+
 
     # define training and validation data loaders
     dataloader_train = torch.utils.data.DataLoader(
@@ -106,11 +128,14 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
     return val_loss
         
 
-def test(model, dataset_test, device, model_1=None):
+def test(model, dataset_test, device, model_1=None, save_to_csv=False):
     model.eval()
     if model_1 is not None:
         model_1.eval()
     carina_losses, ett_losses, dist_losses = [], [], []
+
+    if save_to_csv:
+        df = pd.DataFrame(columns=['image_id', 'category_id', 'x', 'y'])
 
     for images, targets in dataset_test:
         predicted, centers = forward(images, targets, model, device, model_1)
@@ -130,7 +155,27 @@ def test(model, dataset_test, device, model_1=None):
             dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:4])**2, dim=1))
             loss = F.mse_loss(dist, dist_gt)
             dist_losses.append(torch.sqrt(loss).item())
-        
+
+            # Save to csv
+            if save_to_csv:
+                for i in range(len(images)):
+                    # save carina coordinates
+                    df = df.append({
+                        'image_id': targets[i]['image_id'],
+                        'category_id': 3046,
+                        'x': predicted[i, 0].item(),
+                        'y': predicted[i, 1].item()
+                    }, ignore_index=True)
+
+                    # save ETT coordinates
+                    df = df.append({
+                        'image_id': targets[i]['image_id'],
+                        'category_id': 3047,
+                        'x': predicted[i, 2].item(),
+                        'y': predicted[i, 3].item()
+                    }, ignore_index=True)
+
+
     carina_avg_loss = round( sum(carina_losses) / len(carina_losses), 1)
     print("\t carina L2 loss: ", carina_avg_loss)
     total_loss = carina_avg_loss
@@ -142,6 +187,9 @@ def test(model, dataset_test, device, model_1=None):
     dist_avg_loss = round( sum(dist_losses) / len(dist_losses), 1)
     print("\t dist L2 loss: ", dist_avg_loss)
     total_loss += dist_avg_loss
+
+    if save_to_csv:
+        df.to_csv('predictions.csv', index=False)
 
     return total_loss
 
@@ -266,7 +314,7 @@ def pipeline(evaluate=0):
                 arg.batch_size,
                 )
             ))
-        test_loss = test(model, dataloader_test, device, model_1)
+        test_loss = test(model, dataloader_test, device, model_1, save_to_csv=True)
         if arg.logging:
             wandb.log({"test/loss": test_loss})
             wandb.finish()
@@ -305,7 +353,7 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
     parser.add_argument('--model_num', type=int, default=1, help='Model number')
     parser.add_argument('--model1_ckpt', type=str, default=None, help='Checkpoint path for model 1')
-    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MIMIC-1105-512', help='Path for dataset')
+    parser.add_argument('--dataset_path', type=str, default='/home/ec2-user/data/MAIDA_RANZCR', help='Path for dataset')
     parser.add_argument('--mode', type=str, default='train', help='train: regular pipeline, search: hyperparameter search')
     parser.add_argument('--evaluate', type=int, default=0, help='Evaluation mode: 0: train and test, 1: test, 2: classify normal vs abnormal')
     parser.add_argument('--backbone', type=str, default='resnet', help='Pretrained backbone model')
