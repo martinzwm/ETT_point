@@ -383,7 +383,7 @@ if __name__ == "__main__":
 
     # normalize(root="/home/ec2-user/data/RANZCR", image_dir='downsized-512', target_dir='norm-512')
     
-    # get_stats(root="/home/ec2-user/data/RANZCR", image_dir='norm-512')
+    get_stats(root="/home/ec2-user/data/MAIDA_RANZCR", image_dir='train')
     
     # generate_segmask(root="/home/ec2-user/data/MIMIC-1105-512", image_dir='PNGImages', save_name='segmasks.json')
 
@@ -394,8 +394,8 @@ if __name__ == "__main__":
     #     target_folder="/home/ec2-user/data/MAIDA_RANZCR"
     #     )
 
-    combine_jsons(
-        anno_maida="/home/ec2-user/data/MAIDA/anno_downsized.json",
-        anno_ranzcr="/home/ec2-user/data/RANZCR/anno_downsized.json",
-        anno_combined="/home/ec2-user/data/MAIDA_RANZCR/anno_downsized.json",
-    )
+    # combine_jsons(
+    #     anno_maida="/home/ec2-user/data/MAIDA/anno_downsized.json",
+    #     anno_ranzcr="/home/ec2-user/data/RANZCR/anno_downsized.json",
+    #     anno_combined="/home/ec2-user/data/MAIDA_RANZCR/anno_downsized.json",
+    # )

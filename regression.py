@@ -3,6 +3,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
+from configparser import ConfigParser
 from copy import deepcopy
 import torch
 import torch.nn as nn
@@ -19,23 +20,6 @@ from model_cxr import get_model
 
 
 def get_dataloader():
-    # dataset_train = CXRDataset(
-    #     root=arg.dataset_path, 
-    #     image_dir='norm-512',
-    #     ann_file='anno_downsized.json',
-    #     transforms=get_transform(train=True),
-    #     )
-    # dataset_val = deepcopy(dataset_train)
-    # dataset_val.transforms = get_transform(train=False)
-    # dataset_test = deepcopy(dataset_val)
-    # N = len(dataset_train)
-
-    # val_size, test_size = int(N * 0.2), int(N * 0.2)
-    # indices = torch.randperm(N).tolist()
-    # dataset_train = torch.utils.data.Subset(dataset_train, indices[:val_size])
-    # dataset_val = torch.utils.data.Subset(dataset_val, indices[val_size:val_size+test_size])
-    # dataset_test = torch.utils.data.Subset(dataset_test, indices[(N-test_size):])
-
     dataset_train = CXRDataset(
         root=arg.dataset_path, 
         image_dir='train',
@@ -119,7 +103,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
         
         # Log to wandb
         if arg.logging:
-            dst = log_images(model, dataset_val, device, model_1, r=10)
+            dst = log_images(model, dataset_val, device, model_1, r=5)
             wandb.log({
                 "train/loss": train_loss, 
                 "val/loss": val_loss,
@@ -161,7 +145,7 @@ def test(model, dataset_test, device, model_1=None, save_to_csv=False):
                 for i in range(len(predicted)): # note that we only consider images with ETT for now
                     # save carina coordinates
                     df = df.append({
-                        'image_id': kept_ids[i],
+                        'image_id': int(kept_ids[i]),
                         'category_id': 3046,
                         'x': predicted[i, 0].item(),
                         'y': predicted[i, 1].item()
@@ -169,7 +153,7 @@ def test(model, dataset_test, device, model_1=None, save_to_csv=False):
 
                     # save ETT coordinates
                     df = df.append({
-                        'image_id': kept_ids[i],
+                        'image_id': int(kept_ids[i]),
                         'category_id': 3047,
                         'x': predicted[i, 2].item(),
                         'y': predicted[i, 3].item()
