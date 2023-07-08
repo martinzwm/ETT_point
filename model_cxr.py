@@ -10,6 +10,23 @@ from model_utils import *
 import matplotlib.pyplot as plt
 
 
+def get_gloria_raw(finetune=False):
+    """
+    Backbone: GLORIA
+    Model returns a tensor of size (B, 6), where B is the batch size and 
+    6 includes (x_c, y_c, x_et, y_et, distance between et and c, confidence of et present)
+    """
+    model = cxrlearn.gloria(
+        model="resnet50",
+        freeze_backbone=(finetune==False),
+        num_ftrs=2048, # not used
+        num_out=None,
+        device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+        )
+    return model
+
+
+
 def get_model(backbone="resnet", model_num=1, finetune=False):
     if backbone == "resnet":
         model = get_resnet(model_num=model_num, finetune=finetune)
@@ -157,6 +174,8 @@ class SAR_point(nn.Module):
 def get_gloria(model_num=1, finetune=False):
     """
     Backbone: GLORIA
+    Model returns a tensor of size (B, 6), where B is the batch size and 
+    6 includes (x_c, y_c, x_et, y_et, distance between et and c, confidence of et present)
     """
     model = cxrlearn.gloria(
         model="resnet50",
@@ -178,7 +197,7 @@ def get_gloria(model_num=1, finetune=False):
         ResNetBlock(512, 256, 1, 2),
         ResNetBlock(256, 128, 1, 2),
         nn.Flatten(),
-        nn.Linear(128, 5)
+        nn.Linear(128, 6)
         ])
     elif model_num == 2:
         modules.extend([

@@ -8,3 +8,6 @@ my_script.sh
 scrap.ipynb
 /cxrlearn
 *.csv
+*.pth
+*.ckpt
+*.zip

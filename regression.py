@@ -56,11 +56,40 @@ def get_dataloader():
     return dataloader_train, dataloader_val, dataloader_test
 
 
+def loss_fn(predicted, centers, mode="train"):
+    """ Loss function for the model.
+    Input:
+        predicted: (tensor B x 6) predicted coordinates, confidence score and distance between carina and ETT
+        centers: (tensor B x 6) ground truth coordinates and distance between carina and ETT
+    Output:
+        loss = mse loss + classification loss (binary decision of whether ETT is present)
+    """
+    # Loss function
+    idx = torch.where(centers[:, 5] != 0)[0]
+    carina_loss = (predicted[:, :2] - centers[:, :2]).norm(p=2, dim=1)
+    ett_loss = (predicted[:, 2:4] - centers[:, 2:4]).norm(p=2, dim=1)
+    dist_loss = torch.abs(predicted[:, 4] - centers[:, 4]) # norm 2 = abs for distance 
+    classification_loss = F.binary_cross_entropy(torch.sigmoid(predicted[:, 5]), centers[:, 5])
+
+    # Filter out ett_loss and dist_loss for images with out ETT
+    ett_loss = ett_loss[idx]
+    dist_loss = dist_loss[idx]
+
+    # Combine loss and add weight to classification loss
+    if mode=="train":
+        return carina_loss.mean() + ett_loss.mean() + dist_loss.mean() + classification_loss.mean() * np.sqrt(2) * 512
+    elif mode=="test":
+        return carina_loss.mean(), ett_loss.mean(), dist_loss.mean(), classification_loss.mean() * np.sqrt(2) * 512
+
+
 def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=None):
     model.train()
     if model_1:
         model_1.eval()
-    best_loss = test(model, dataset_val, device, model_1)
+    # best_loss = test(model, dataset_val, device, model_1)
+    best_loss = float("inf")
+    # dst = log_images(model, dataset_val, device, model_1, r=5)
+    # dst.save("image")
 
     for i in range(epoch):
         print("Training epoch: ", i+1, " / ", epoch, " ...")
@@ -70,14 +99,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             if predicted is None:
                 continue
             
-            # Loss (3 components: carina, ETT, distance)
-            loss = F.mse_loss(predicted[:, :4], centers)
-            # predicted distance between carina and ETT
-            dist = predicted[:, 4]
-            # actual distance between carina and ETT
-            dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:])**2, dim=1))
-            loss += F.mse_loss(dist, dist_gt)
-
+            loss = loss_fn(predicted, centers)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -93,7 +115,7 @@ def train(model, dataset_train, dataset_val, optimizer, device, epoch, model_1=N
             best_loss = val_loss
             torch.save(
                 model.state_dict(), 
-                "ckpts/{}_model{}_lr={}_bs={}.pt".format(
+                "new_ckpts/{}_model{}_lr={}_bs={}.pt".format(
                     arg.backbone,
                     arg.model_num,
                     round(optimizer.param_groups[0]['lr'], 5),
@@ -116,61 +138,54 @@ def test(model, dataset_test, device, model_1=None, save_to_csv=False):
     model.eval()
     if model_1 is not None:
         model_1.eval()
-    carina_losses, ett_losses, dist_losses = [], [], []
+    carina_losses, ett_losses, dist_losses, class_losses = [], [], [], []
 
     if save_to_csv:
         df = pd.DataFrame(columns=['image_id', 'category_id', 'x', 'y'])
 
     for images, targets in dataset_test:
-        predicted, centers, kept_ids = forward(images, targets, model, device, model_1)
+        predicted, centers, image_ids = forward(images, targets, model, device, model_1)
         if predicted is None:
                 continue
         with torch.no_grad():
-            # Carina and ETT loss
-            carina_loss = F.mse_loss(predicted[:, :2], centers[:, :2])
-            ett_loss = F.mse_loss(predicted[:, 2:4], centers[:, 2:4])
-            carina_losses.append(torch.sqrt(carina_loss).item())
-            ett_losses.append(torch.sqrt(ett_loss).item())
-
-            # Distance loss
-            # predicted distance between carina and ETT
-            dist = predicted[:, 4]
-            # actual distance between carina and ETT
-            dist_gt = torch.sqrt(torch.sum((centers[:, :2] - centers[:, 2:4])**2, dim=1))
-            loss = F.mse_loss(dist, dist_gt)
-            dist_losses.append(torch.sqrt(loss).item())
+            carina_loss, ett_loss, dist_loss, classification_loss = loss_fn(predicted, centers, mode="test")
+            carina_losses.append(carina_loss.item())
+            ett_losses.append(ett_loss.item())
+            dist_losses.append(dist_loss.item())
+            class_losses.append(classification_loss.item())
 
             # Save to csv
             if save_to_csv:
                 for i in range(len(predicted)): # note that we only consider images with ETT for now
                     # save carina coordinates
                     df = df.append({
-                        'image_id': int(kept_ids[i]),
+                        'image_id': int(image_ids[i]),
                         'category_id': 3046,
                         'x': predicted[i, 0].item(),
                         'y': predicted[i, 1].item()
                     }, ignore_index=True)
 
                     # save ETT coordinates
-                    df = df.append({
-                        'image_id': int(kept_ids[i]),
-                        'category_id': 3047,
-                        'x': predicted[i, 2].item(),
-                        'y': predicted[i, 3].item()
-                    }, ignore_index=True)
+                    if predicted[i, 5] > 0.5: # if ETT is predicted to be present
+                        df = df.append({
+                            'image_id': int(image_ids[i]),
+                            'category_id': 3047,
+                            'x': predicted[i, 2].item(),
+                            'y': predicted[i, 3].item()
+                        }, ignore_index=True)
 
 
     carina_avg_loss = round( sum(carina_losses) / len(carina_losses), 1)
-    print("\t carina L2 loss: ", carina_avg_loss)
-    total_loss = carina_avg_loss
-    
     ett_avg_loss = round( sum(ett_losses) / len(ett_losses), 1)
-    print("\t ETT L2 loss: ", ett_avg_loss)
-    total_loss += ett_avg_loss
-    
     dist_avg_loss = round( sum(dist_losses) / len(dist_losses), 1)
+    class_avg_loss = round( sum(class_losses) / len(class_losses), 1)
+
+    total_loss = carina_avg_loss + ett_avg_loss + dist_avg_loss + class_avg_loss
+    print("total loss: ", total_loss)
+    print("\t carina L2 loss: ", carina_avg_loss)
+    print("\t ETT L2 loss: ", ett_avg_loss)
     print("\t dist L2 loss: ", dist_avg_loss)
-    total_loss += dist_avg_loss
+    print("\t classification loss: ", class_avg_loss)
 
     if save_to_csv:
         df.to_csv('predictions.csv', index=False)
@@ -204,13 +219,7 @@ def forward(images, targets, model, device, model_1=None):
     bboxes = torch.stack([target['boxes'] for target in targets], dim=0)
 
     # Only keep the images that have ETT
-    kept_indexes = [i for i in range(len(targets)) if targets[i]['labels'][1] != 0]
-    kept_ids = [targets[i]['image_id_original'] for i in kept_indexes]
-    if len(kept_ids) == 0:
-        return None, None
-    
-    images = images[kept_indexes]
-    bboxes = bboxes[kept_indexes]
+    image_ids = [targets[i]['image_id_original'] for i in range(len(targets))]
 
     # Predict
     if model_1 is not None: # predict rough location of carina using model 1
@@ -225,9 +234,12 @@ def forward(images, targets, model, device, model_1=None):
     )
     centers = centers.permute(0, 2, 1)
     centers = centers.reshape(centers.size(0), -1)
+    dist_gt = (centers[:, :2] - centers[:, 2:]).norm(p=2, dim=1) # dist between carina and ETT
+    et_present_gt = torch.Tensor([targets[i]['labels'][1] != 0 for i in range(len(targets))])
+    centers = torch.cat((centers, dist_gt.unsqueeze(1), et_present_gt.unsqueeze(1)), dim=1)
     centers = centers.to(device)
 
-    return predicted, centers, kept_ids
+    return predicted, centers, image_ids
 
 
 def pipeline(evaluate=0):
@@ -235,7 +247,7 @@ def pipeline(evaluate=0):
     torch.manual_seed(1234)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     if arg.logging:
-        wandb.init(project='ETT-debug')
+        wandb.init(project='ETT-detection')
     if arg.mode == "search":
         config = wandb.config
         arg.backbone = config['backbone']
@@ -291,7 +303,7 @@ def pipeline(evaluate=0):
         # Test on the best model so far
         print("Testing on test set ...")
         model.load_state_dict(torch.load(
-            "ckpts/{}_model{}_lr={}_bs={}.pt".format(
+            "new_ckpts/{}_model{}_lr={}_bs={}.pt".format(
                 arg.backbone,
                 arg.model_num,
                 round(optimizer.param_groups[0]['lr'], 5),
@@ -322,7 +334,7 @@ def hyperparameter_search():
             'batch_size': {'values': [2, 4]},
         }
     }
-    sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-debug')
+    sweep_id = wandb.sweep(sweep=sweep_configuration, project='ETT-detection')
     wandb.agent(sweep_id, function=pipeline, count=20)
     wandb.finish()
 
@@ -331,7 +343,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Regression model')
     parser.add_argument('--logging', type=int, default=1, help='Enable logging to wandb')
     parser.add_argument('--lr', type=float, default=0.0005, help='Learning rate')
-    parser.add_argument('--batch_size', type=int, default=4, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--epoch', type=int, default=20, help='Number of epochs')
     parser.add_argument('--finetune', type=int, default=0, help='Finetune the model')
     parser.add_argument('--ckpt', type=str, default=None, help='Checkpoint path')
