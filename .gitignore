@@ -9,5 +9,6 @@ scrap.ipynb
 /cxrlearn
 *.csv
 *.pth
+*.pt
 *.ckpt
 *.zip
